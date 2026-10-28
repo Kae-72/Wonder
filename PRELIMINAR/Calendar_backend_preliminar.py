@@ -9,7 +9,7 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
 
-#para configurar hola xomo sssss
+#para configurar
 SCOPES = [
     "https://www.googleapis.com/auth/calendar.events.readonly"
 ]

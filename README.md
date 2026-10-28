@@ -2,7 +2,7 @@
 <img width="160" height="160" alt="IMG_5774(1)" src="https://github.com/user-attachments/assets/26bb6c75-0df3-4e00-b486-9c1854045303" />
 
 ## Description of the project
-Electronics and programming project
+Electronics and programming project  
 It is a raspberry pi pico 2 based tamagotchi style mascot keychain designed for students. It is meant to help you recording lectures, staying in the loop with google calendar integration and pomodoro timer to study without having to look at your phone's timer!
 ### What is "Wonder"?
 Wonder is the name of the mascot! It is also the name of the app, and the physical device.  
@@ -36,8 +36,9 @@ Currently it has three functionalities:
 ## In this repo you will find...
 Code for...
 - every function of the device integrated and designed for our prototype (you might need to change some aspects depending on your components and pins)
-- the app
-You will also find...
+- the app  
+
+You will also find...  
 - Schematics or pictures of the connections
 - the file of the 3d printed device's case
 - photo of the finished device

@@ -9,7 +9,7 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
 
-#para configurar
+#para configurar hola
 SCOPES = [
     "https://www.googleapis.com/auth/calendar.events.readonly"
 ]
@@ -90,7 +90,7 @@ def print_events(events):
             date_text = dt.strftime("%d/%m/%Y")
             time_text = dt.strftime("%H:%M")
 
-        else:
+        else: 
             # All-day event
             date_text = dt.strftime("%d/%m/%Y")
             time_text = "All day"

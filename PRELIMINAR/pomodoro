@@ -1,0 +1,70 @@
+# -*- coding: utf-8 -*-
+
+import threading
+import time
+
+
+
+
+
+def pomodoro()->None:
+    
+    interrumpir=threading.Event()
+    fin_pomodoro=threading.Event()
+
+    def desactivar_pomodoro():
+        input()
+        if not fin_pomodoro.is_set():
+            interrumpir.set()
+    
+    print("Pomodoro iniciado")
+    print("Presiona ENTER para detener el pomodoro\n")
+        
+    hilo_input=threading.Thread(target=desactivar_pomodoro, daemon=True)
+    hilo_input.start()
+    
+    estudio=10
+    descanso=5
+    
+    for sesiones in range(4):
+        
+        if interrumpir.is_set():
+            break
+        
+        print(f"\nSesión {sesiones+1} de 4")
+        print("Hora de estudiar")
+        
+        for tiempo in range(estudio,0,-1):
+            if interrumpir.is_set():
+                break
+            
+            minutos=tiempo//60
+            segundos=tiempo%60
+            
+            print(f"\r{minutos:02d} : {segundos:02d}", end="", flush=True)
+            time.sleep(1)
+            
+        if interrumpir.is_set():
+            break
+        
+        print("\n\nTiempo de descansar")
+        
+        for tiempo in range(descanso,0,-1):
+            if interrumpir.is_set():
+                break
+            
+            minutos=tiempo//60
+            segundos=tiempo%60
+            
+            print(f"\r{minutos:02d} : {segundos:02d}", end="", flush=True)
+            time.sleep(1)
+        print()
+        
+    fin_pomodoro.set()
+    
+    print("\n")
+    if interrumpir.is_set():
+        print("Se interrumpio la sesión pomodoro")
+    else:
+        print("Se terminó")
+pomodoro()

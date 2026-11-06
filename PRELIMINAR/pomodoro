@@ -23,8 +23,8 @@ def pomodoro()->None:
     hilo_input=threading.Thread(target=desactivar_pomodoro, daemon=True)
     hilo_input.start()
     
-    estudio=10
-    descanso=5
+    estudio=1500
+    descanso=300
     
     for sesiones in range(4):
         

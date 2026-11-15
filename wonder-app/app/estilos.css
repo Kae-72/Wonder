@@ -1,0 +1,290 @@
+/* Wonder App — estética del póster "Wisdom begins in wonder":
+   fondo azul claro con manchas difusas, logotipo E4 Digital en negro,
+   texto monoespaciado y el ícono azul oficial. Una sola columna, pensada
+   primero para celular. */
+
+@font-face {
+  font-family: "E4 Digital";
+  src: url("fuentes/E4DigitalFinal.ttf") format("truetype");
+  font-display: swap;
+}
+
+:root {
+  color-scheme: light;
+  /* colores de marca (manual "Imagen de marca - wonder") */
+  --fondo: #dceaff;
+  --papel: #edf6ff;
+  --tinta: #0b0e14;
+  --tinta-suave: #47566b;
+  --azul: #0098ff;
+  --azul-fuerte: #2268cc;
+  --cielo: #92d8ff;
+  --lila: #d7dfff;
+  --menta: #cde8b5;
+  /* estados (aparte del acento) */
+  --bien: #17713f;
+  --ojo: #8a5200;
+  --mal: #b3261e;
+  /* colores de la pantalla del llavero (los mismos de main.py) */
+  --pico-navy: rgb(28, 51, 80);
+  --pico-azul: rgb(104, 178, 255);
+  --pico-claro: rgb(221, 238, 255);
+  --pico-gris: rgb(110, 140, 170);
+
+  /* superficies y contrastes (cambian con el tema) */
+  --sobre-tinta: #ffffff;          /* texto encima de --tinta (botones, pestaña activa) */
+  --enlace: #2268cc;
+  --linea: #0b0e14;                /* color de los bordes */
+  --panel: #edf6ffd9;
+  --superficie: #ffffffb3;
+  --superficie-fuerte: #ffffffc7;
+  --campo: #ffffff;
+  --barra: #edf6fff2;
+  --mancha-1: #5b9bf8cc;
+  --mancha-2: #5b9bf899;
+  --mancha-3: #92d8ff99;
+
+  --titulo: "E4 Digital", "Arial Black", sans-serif;
+  --texto: ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Consolas, "DejaVu Sans Mono", monospace;
+  --radio: 14px;
+  --borde: 1.5px solid var(--linea);
+}
+
+/* ---------- tema oscuro ----------
+   Sin elegir nada, sigue al sistema. El botón de la cabecera fija
+   data-theme="light" o "dark" en <html> y eso manda. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --fondo: #070b14;
+    --papel: #101827;
+    --tinta: #eaf2ff;
+    --tinta-suave: #9db0cc;
+    --sobre-tinta: #070b14;
+    --enlace: #7fbcff;
+    --linea: #3b4b68;
+    --panel: #101827e0;
+    --superficie: #ffffff12;
+    --superficie-fuerte: #00000047;
+    --campo: #0b1220;
+    --barra: #0d1524f2;
+    --cielo: #123a52;
+    --lila: #262b4d;
+    --menta: #24361a;
+    --mancha-1: #2268cc8c;
+    --mancha-2: #2268cc59;
+    --mancha-3: #0098ff33;
+    --bien: #62d394;
+    --ojo: #f2b65c;
+    --mal: #ff8f85;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --fondo: #070b14;
+  --papel: #101827;
+  --tinta: #eaf2ff;
+  --tinta-suave: #9db0cc;
+  --sobre-tinta: #070b14;
+  --enlace: #7fbcff;
+  --linea: #3b4b68;
+  --panel: #101827e0;
+  --superficie: #ffffff12;
+  --superficie-fuerte: #00000047;
+  --campo: #0b1220;
+  --barra: #0d1524f2;
+  --cielo: #123a52;
+  --lila: #262b4d;
+  --menta: #24361a;
+  --mancha-1: #2268cc8c;
+  --mancha-2: #2268cc59;
+  --mancha-3: #0098ff33;
+  --bien: #62d394;
+  --ojo: #f2b65c;
+  --mal: #ff8f85;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--fondo);
+  color: var(--tinta);
+  font: 14px/1.55 var(--texto);
+  -webkit-text-size-adjust: 100%;
+}
+img { max-width: 100%; }
+[hidden] { display: none !important; }
+
+/* manchas azules difusas del póster */
+.manchas {
+  position: fixed; inset: 0; z-index: -1; overflow: hidden;
+  background:
+    radial-gradient(38rem 30rem at 105% 8%, var(--mancha-1), transparent 62%),
+    radial-gradient(30rem 26rem at 96% 62%, var(--mancha-2), transparent 60%),
+    radial-gradient(26rem 22rem at -12% 96%, var(--mancha-3), transparent 62%),
+    var(--fondo);
+}
+
+/* ---------- estructura ---------- */
+.cabecera, .vista { width: min(100%, 600px); margin-inline: auto; padding-inline: 18px; }
+.cabecera__lado { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.boton-tema { font: 600 12px/1 var(--texto); color: var(--tinta); background: var(--superficie); border: var(--borde); border-radius: 99px; padding: 7px 11px; cursor: pointer; white-space: nowrap; }
+.boton-tema:hover { background: var(--lila); }
+.boton-tema:focus-visible { outline: 3px solid var(--azul); outline-offset: 2px; }
+.cabecera { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 18px; }
+.marca { display: flex; align-items: center; gap: 10px; color: inherit; text-decoration: none; }
+.marca img { border-radius: 10px; }
+/* logotipo en el azul degradado del logo oficial (claro arriba, oscuro abajo) */
+.logotipo {
+  font: 34px/1 var(--titulo); letter-spacing: .01em; padding-top: 4px;
+  color: var(--azul);
+  background: linear-gradient(180deg, #3eb4ff 0%, var(--azul) 45%, var(--azul-fuerte) 100%);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.vista { padding-top: 18px; padding-bottom: 104px; display: flex; flex-direction: column; gap: 16px; outline: none; }
+
+h1, h2, h3, p { margin: 0; }
+h1 { font: 26px/1.1 var(--titulo); text-wrap: balance; }
+h2 { font: 600 16px/1.3 var(--texto); }
+.lema { color: var(--tinta-suave); }
+.suave { color: var(--tinta-suave); }
+.chico { font-size: 12.5px; }
+a { color: var(--enlace); }
+code, .dato { font-family: var(--texto); background: var(--superficie); border-radius: 6px; padding: 1px 6px; overflow-wrap: anywhere; }
+
+/* ---------- paneles ---------- */
+.panel {
+  background: var(--panel); border: var(--borde); border-radius: var(--radio);
+  padding: 16px; display: flex; flex-direction: column; gap: 12px;
+  backdrop-filter: blur(6px);
+}
+.panel__cabeza { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.fila { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.fila--entre { justify-content: space-between; }
+.pila { display: flex; flex-direction: column; gap: 8px; }
+
+/* ---------- pastillas de estado ---------- */
+.pastilla {
+  display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+  font-size: 12px; line-height: 1; padding: 6px 10px; border-radius: 99px;
+  border: 1.5px solid currentColor; background: var(--superficie); color: var(--tinta-suave);
+}
+.pastilla::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.pastilla--bien { color: var(--bien); }
+.pastilla--aviso { color: var(--ojo); }
+.pastilla--mal { color: var(--mal); }
+.pastilla--azul { color: var(--enlace); }
+.pastilla--latido::before { animation: latido 1.2s ease-in-out infinite; }
+@keyframes latido { 50% { opacity: .25; } }
+
+/* ---------- botones y campos ---------- */
+.boton {
+  font: 600 14px/1 var(--texto); color: var(--sobre-tinta); background: var(--tinta);
+  border: var(--borde); border-radius: 10px; padding: 12px 16px; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px; text-decoration: none;
+}
+.boton:hover { opacity: .86; }
+.boton--claro { background: var(--campo); color: var(--tinta); }
+.boton--claro:hover { background: var(--lila); opacity: 1; }
+.boton--azul { background: var(--azul-fuerte); border-color: var(--azul-fuerte); color: #fff; }
+.boton--chico { padding: 8px 12px; font-size: 13px; }
+.boton[disabled] { opacity: .5; cursor: not-allowed; }
+.boton:focus-visible, a:focus-visible, input:focus-visible, .opcion:focus-visible, summary:focus-visible, .pestanas a:focus-visible {
+  outline: 3px solid var(--azul); outline-offset: 2px;
+}
+.g-logo { width: 18px; height: 18px; background: #fff; border-radius: 50%; display: grid; place-items: center; color: var(--azul-fuerte); font: 700 12px/1 Arial, sans-serif; }
+
+label { display: flex; flex-direction: column; gap: 5px; font-size: 13px; }
+input[type="text"], input[type="password"], input[type="number"] {
+  font: 15px/1.2 var(--texto); padding: 11px 12px; border: var(--borde); border-radius: 10px;
+  background: var(--campo); color: var(--tinta); width: 100%;
+}
+label.fila { flex-direction: row; align-items: center; }
+.enlace { background: none; border: 0; padding: 0; font: inherit; color: var(--azul-fuerte); text-decoration: underline; cursor: pointer; }
+ul.pila { list-style: none; margin: 0; padding: 0; }
+details summary { cursor: pointer; margin-bottom: 8px; }
+input[readonly] { background: var(--papel); color: var(--tinta-suave); }
+
+.nota { border-left: 4px solid var(--azul); padding: 8px 12px; background: var(--superficie); border-radius: 0 10px 10px 0; font-size: 13px; }
+.nota--ojo { border-color: var(--ojo); }
+.nota--mal { border-color: var(--mal); }
+ol.pasos { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 6px; }
+
+/* ---------- inicio ---------- */
+.saludo { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px; }
+.saludo .wonder-capas { width: 132px; }
+.saludo h1 { font: 700 30px/1.1 var(--texto); letter-spacing: -.01em; }   /* el saludo va en la fuente del texto, no en la del logo */
+
+/* Wonder por capas (emoción + accesorios), siempre los PNG originales */
+.wonder-capas { position: relative; aspect-ratio: 1; }
+.wonder-capas img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+
+/* ---------- pantalla del llavero (160x128, aquí al doble) ---------- */
+.llavero { align-self: center; padding: 12px 12px 10px; background: var(--azul-fuerte); border: 1.5px solid #0b0e14; border-radius: 22px; display: flex; flex-direction: column; gap: 8px; align-items: center; max-width: 100%; }
+.llavero__pantalla { width: 320px; height: 256px; max-width: 100%; position: relative; overflow: hidden; background: var(--pico-azul); border: 2px solid var(--tinta); font: 16px/16px "Courier New", ui-monospace, monospace; font-weight: 700; letter-spacing: 0; }
+.llavero__pantalla canvas { width: 100%; height: 100%; image-rendering: pixelated; display: block; }
+.llavero__botones { display: flex; gap: 14px; align-items: center; }
+.llavero__botones button { width: 34px; height: 34px; border-radius: 50%; border: 1.5px solid #0b0e14; background: #92d8ff; color: #0b0e14; cursor: pointer; font: 700 14px/1 var(--texto); }
+.llavero__botones button:hover { background: #fff; }
+
+/* ---------- calendario ---------- */
+.dia { display: flex; flex-direction: column; gap: 6px; }
+.dia__nombre { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--tinta-suave); }
+.evento { display: grid; grid-template-columns: 74px 1fr; gap: 10px; padding: 10px 12px; background: var(--superficie); border-radius: 10px; border-left: 4px solid var(--azul); }
+.evento__hora { font-variant-numeric: tabular-nums; color: var(--tinta-suave); }
+.evento__titulo { font-weight: 600; overflow-wrap: anywhere; }
+
+/* ---------- grabaciones ---------- */
+.grabacion { border: var(--borde); border-radius: var(--radio); background: var(--menta); overflow: hidden; }
+.grabacion:nth-of-type(3n+2) { background: var(--lila); }
+.grabacion:nth-of-type(3n) { background: var(--cielo); }
+.grabacion > summary { list-style: none; cursor: pointer; padding: 14px 16px; display: flex; flex-direction: column; gap: 6px; }
+.grabacion > summary::-webkit-details-marker { display: none; }
+.grabacion__titulo { font-weight: 700; overflow-wrap: anywhere; }
+.grabacion__vista { font-size: 12.5px; color: var(--tinta-suave); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.grabacion__cuerpo { padding: 0 16px 16px; display: flex; flex-direction: column; gap: 12px; }
+.texto-largo { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--superficie-fuerte); border-radius: 10px; padding: 12px; max-height: 340px; overflow-y: auto; }
+audio { width: 100%; }
+
+/* ---------- wonder ---------- */
+.escenario { position: relative; border: var(--borde); border-radius: var(--radio); overflow: hidden; background: url("img/fondo_wonder.jpg") center/cover; aspect-ratio: 5 / 4; }
+.escenario .wonder-capas { position: absolute; left: 50%; bottom: 1%; height: 97%; transform: translateX(-50%); }
+.opciones { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 8px; }
+.opcion {
+  font: 600 13px/1.2 var(--texto); color: var(--tinta); background: var(--campo); border: var(--borde); border-radius: 12px;
+  padding: 8px; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 4px;
+}
+.opcion img { width: 64px; height: 64px; object-fit: contain; }
+.opcion .recorte { width: 64px; height: 64px; overflow: hidden; position: relative; background: #edf6ff; border-radius: 8px; }
+.opcion .recorte img { position: absolute; max-width: none; height: auto; object-fit: fill; }
+.opcion[aria-pressed="true"] { background: var(--tinta); color: var(--sobre-tinta); }
+
+/* ---------- pestañas ---------- */
+.pestanas {
+  position: fixed; left: 50%; bottom: 12px; transform: translateX(-50%);
+  width: min(calc(100% - 24px), 560px); display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px;
+  background: var(--barra); border: var(--borde); border-radius: 20px; padding: 6px;
+  padding-bottom: 6px; backdrop-filter: blur(8px); z-index: 5;
+}
+.pestanas a { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 6px 2px; border-radius: 14px; color: var(--tinta); text-decoration: none; font-size: 11px; }
+.pestanas img { width: 30px; height: 30px; object-fit: contain; border-radius: 7px; }
+.pestanas a[aria-current="page"] { background: var(--tinta); color: var(--sobre-tinta); }
+
+/* ---------- diálogo y avisos ---------- */
+.dialogo { width: min(calc(100% - 24px), 520px); max-height: calc(100% - 24px); border: var(--borde); border-radius: 18px; padding: 0; background: var(--papel); color: var(--tinta); font: inherit; }
+.dialogo::backdrop { background: #0b0e1499; }
+.dialogo__dentro { padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+.tostada { position: fixed; left: 50%; bottom: 96px; transform: translateX(-50%); background: var(--tinta); color: var(--sobre-tinta); padding: 10px 16px; border-radius: 12px; z-index: 10; max-width: calc(100% - 32px); text-align: center; }
+
+.vacio { text-align: center; padding: 22px 12px; color: var(--tinta-suave); }
+
+@media (max-width: 380px) {
+  .logotipo { font-size: 28px; }
+  .saludo .wonder-capas { width: 104px; }
+  .evento { grid-template-columns: 62px 1fr; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pastilla--latido::before { animation: none; }
+}

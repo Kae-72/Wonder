@@ -1,0 +1,26 @@
+# ===== Secretos y datos personales: NUNCA al repositorio =====
+credentials.json
+token*.json
+wonder-app/hub/datos/
+.env
+
+# ===== Archivos que crea cada llavero (son personales de ese llavero) =====
+llavero/config.json
+llavero/pines.json
+llavero/cal.json
+llavero/hechos.json
+llavero/pomodoro.json
+llavero/wonder.raw
+llavero/wonder.ver
+llavero/wonder.tmp
+
+# ===== Grabaciones de clases =====
+*.wav
+clases/
+
+# ===== Python y sistema =====
+__pycache__/
+*.pyc
+.DS_Store
+Thumbs.db
+desktop.ini

@@ -1,0 +1,6 @@
+# Solo app + Google Calendar (sin grabaciones): instala rapido
+flask>=3.0
+pillow>=10.0
+google-api-python-client>=2.100
+google-auth-oauthlib>=1.2
+tzdata; sys_platform == "win32"

@@ -16,10 +16,10 @@ except ImportError:
     import urequests as requests
 
 # ===== CONFIGURACIÓN (no subas este archivo a GitHub con tu clave de WiFi) =====
-WIFI_NOMBRE = "iphone de paula"
-WIFI_CLAVE = "gh9sbpthp3bv"
+WIFI_NOMBRE = "TU_WIFI"
+WIFI_CLAVE = "TU_CLAVE"
 SERVIDOR = "http://192.168.1.50:8000/eventos"   # la IP que imprime calendar_backend.py
-CLAVE = "123456789"                      # la misma CLAVE del backend
+CLAVE = "TU_CLAVE_DEL_HUB"               # la misma CLAVE del backend
 REFRESCO_SEG = 300
 HORIZONTAL = 0x60       # si se ve de cabeza: 0xA0
 # ===============================================================================

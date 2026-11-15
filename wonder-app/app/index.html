@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#dceaff">
+  <title>Wonder App</title>
+  <link rel="icon" href="img/favicon.png">
+  <link rel="apple-touch-icon" href="img/icono_192.png">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="stylesheet" href="estilos.css">
+  <script>
+    // aplica el tema guardado antes de pintar (evita el destello)
+    try { var t = localStorage.getItem("wonder-tema"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}
+  </script>
+</head>
+<body>
+  <div class="manchas" aria-hidden="true"></div>
+
+  <header class="cabecera">
+    <a class="marca" href="#inicio" aria-label="Wonder, ir a inicio">
+      <img src="img/icono_192.png" alt="" width="40" height="40">
+      <span class="logotipo">WONDER</span>
+    </a>
+    <div class="cabecera__lado">
+      <span id="aviso-demo" class="pastilla pastilla--aviso" hidden>Demostración</span>
+      <button id="boton-tema" class="boton-tema" type="button">Tema</button>
+    </div>
+  </header>
+
+  <main id="vista" class="vista" tabindex="-1"></main>
+
+  <nav class="pestanas" aria-label="Secciones">
+    <a href="#inicio" data-vista="inicio"><img src="img/w.png" alt=""><span>Inicio</span></a>
+    <a href="#calendario" data-vista="calendario"><img src="img/icono_calendario.png" alt=""><span>Calendario</span></a>
+    <a href="#grabaciones" data-vista="grabaciones"><img src="img/icono_grabadora.png" alt=""><span>Grabaciones</span></a>
+    <a href="#wonder" data-vista="wonder"><img src="img/icono_mascota.png" alt=""><span>Wonder</span></a>
+  </nav>
+
+  <dialog id="dialogo" class="dialogo" aria-labelledby="dialogo-titulo"></dialog>
+  <div id="tostada" class="tostada" role="status" aria-live="polite" hidden></div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,49 @@
+# Cambios de Wonder
+
+## Cómo aplicar una versión nueva
+
+1. **GitHub:** descomprime el zip y copia su contenido **encima** de la carpeta del repositorio
+   (la de GitHub Desktop). Acepta **reemplazar** los archivos. Después, en GitHub Desktop:
+   escribe un resumen (p. ej. "v6") → **Commit to main** → **Push origin**.
+2. **Llavero:** en Thonny, pulsa ■ Stop y sube los archivos de `llavero/` que diga la lista
+   de la versión (o todos los `.py` si no estás seguro). La carpeta `pruebas/` no se sube:
+   esos archivos se abren desde el computador y se corren con ▶.
+3. **Hub:** si el hub corre desde otra carpeta, copia ahí también `wonder-app/` encima
+   (reemplazando). Nunca borres `wonder-app/hub/datos/` ni `credentials.json`.
+
+**Lo que nunca sube a GitHub** (lo bloquea `.gitignore`): `credentials.json`, `hub/datos/`
+(sesión de Google, clave del llavero, logros), los archivos que crea el llavero (`config.json`
+con las claves del WiFi, `pines.json`, etc.) y las grabaciones `.wav`.
+
+---
+
+## v6 — 15 de noviembre de 2026
+
+Archivos del llavero que cambiaron: **todos los `.py`** de `llavero/`.
+
+- **Sonidos con variedad:** los sonidos de navegación cambian un poco cada vez (otra
+  variante, otro timbre, notas de adorno), siempre en la misma escala. Jingle de encendido
+  distinto cada vez y arpegio nuevo al entrar a la sesión (`entrar`). Los avisos y errores
+  no cambian, para reconocerlos al instante.
+- **Memoria:** pantalla, fondos y sonido reservan su espacio al arrancar (arregla
+  "memory allocation failed").
+- **¡Hecho!:** en Calendario, IZQ/DER eligen un evento y O lo marca como cumplido (tarea o
+  clase). El hub lo valida contra Google Calendar (`hub/logros.py`): evento real, creado antes
+  de empezar, desde que empieza hasta 12 h después de terminar, una vez, máximo 8 por día.
+  Mantener DER actualiza el calendario.
+- **Dormir:** en batería, 3 min sin tocar nada y sin pomodoro ni grabación → apaga pantalla,
+  WiFi y parlante. Despierta con un botón o antes de una clase.
+- **Permiso para grabar:** pregunta al entrar a la grabadora y antes de cada grabación.
+- **Grabadora:** micrófono en estéreo con `MIC_CANAL` (0 = L/R a GND, 1 = L/R a 3.3V);
+  texto de la pantalla corregido; muestra el error real de la microSD;
+  prueba nueva `llavero/pruebas/prueba_grabar.py`.
+- **Hub:** transcribe con Gemini si Whisper no está instalado (`WONDER_TRANSCRIPCION`).
+- **App:** paneles ¡Hecho! y Pomodoro; batería, red y redes guardadas del llavero.
+- **Botones por defecto:** izquierdo GP14, centro GP15, derecho GP16.
+- **Seguridad:** se quitó la clave del WiFi de `PRELIMINAR/calendario pico.py`.
+
+## v4 — 14 de noviembre de 2026
+
+- Varias redes WiFi guardadas y conexión automática; el hub se anuncia por UDP 37020.
+- Barra con hora, WiFi y batería; pomodoro en segundo plano; grabadora a microSD.
+- Sonidos estilo Game Boy por el amplificador MAX98357A.

@@ -1,0 +1,12 @@
+# Wonder Hub - lo minimo para la app, el login de Google y el calendario
+flask>=3.0
+pillow>=10.0
+google-api-python-client>=2.100
+google-auth-oauthlib>=1.2
+tzdata; sys_platform == "win32"
+
+# Grabaciones (transcribir + resumir + Word). Pesan mas; instalalas cuando
+# vayas a usar esa parte. Whisper tambien necesita ffmpeg en el sistema.
+openai-whisper
+google-genai
+python-docx

@@ -1,0 +1,13 @@
+{
+  "name": "Wonder",
+  "short_name": "Wonder",
+  "description": "Conecta tu llavero Wonder: Google Calendar, grabaciones y personalización.",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#dceaff",
+  "theme_color": "#dceaff",
+  "icons": [
+    { "src": "img/icono_192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "img/icono_512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

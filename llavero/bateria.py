@@ -6,7 +6,8 @@
 #   - Solo con batería, VSYS = batería - lo que se come el diodo (~0.25 V).
 # El porcentaje sale de la curva típica de una LiPo de 3.7 V.
 
-from machine import ADC
+from machine import ADC, Pin
+import time
 
 FACTOR = 3 * 3.3 / 65535      # VSYS llega al ADC dividido entre 3
 CAIDA_DIODO = 0.25            # ajústalo si al medir con multímetro no coincide
@@ -20,14 +21,31 @@ _adc = None
 _historial = []
 
 
-def vsys():
+def vsys(wlan=None):
+    """Voltaje de VSYS. El pin 29 lo comparte el chip WiFi, así que si el WiFi
+    está prendido se apaga un instante para medir. Devuelve (voltaje, apago_wifi)."""
     global _adc
-    if _adc is None:
-        _adc = ADC(3)          # canal 3 = VSYS/3 (no se toca el pin 29: lo usa el WiFi)
-    s = 0
-    for _ in range(8):
-        s += _adc.read_u16()
-    return s / 8 * FACTOR
+    apago = False
+    if wlan is not None:
+        try:
+            if wlan.active():
+                wlan.active(False)
+                apago = True
+                time.sleep_ms(30)
+        except Exception:
+            pass
+    try:
+        Pin(25, Pin.OUT, value=1)          # aparta al chip WiFi del pin 29
+        Pin(29, Pin.IN, pull=None)
+        _adc = ADC(Pin(29))
+        s = 0
+        for _ in range(16):
+            s += _adc.read_u16()
+        v = s / 16 * FACTOR
+    finally:
+        if apago:
+            wlan.active(True)              # el driver del WiFi vuelve a tomar el pin 29
+    return v, apago
 
 
 def porcentaje(v_bat):
@@ -39,18 +57,21 @@ def porcentaje(v_bat):
     return 0
 
 
-def leer():
-    """Devuelve (porcentaje o None, usb_conectado, voltaje_vsys)."""
+def leer(wlan=None):
+    """Devuelve (porcentaje o None, usb_conectado, voltaje_vsys o 0 si la lectura no sirve, apago_wifi)."""
     try:
-        v = vsys()
+        v, apago = vsys(wlan)
     except Exception as e:
         print("Bateria:", e)
-        return None, False, 0
+        return None, False, 0, False
+    print("VSYS = %.2f V" % v)
+    if not 2.5 < v < 5.8:                  # lectura imposible: se ignora
+        return None, False, 0, apago
     if v >= UMBRAL_USB:
         _historial.clear()
-        return None, True, v
+        return None, True, v, apago
     _historial.append(v + CAIDA_DIODO)
     if len(_historial) > 6:
         _historial.pop(0)
     promedio = sum(_historial) / len(_historial)
-    return porcentaje(promedio), False, v
+    return porcentaje(promedio), False, v, apago

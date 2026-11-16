@@ -30,7 +30,7 @@ PIN_SD = 26           # encender / apagar el amplificador
 
 VOLUMEN = 60          # 0 a 100. Súbelo o bájalo según el parlante.
 FREC_MUESTREO = 16000
-MAX_MS = 900            # el sonido más largo (aviso) dura ~0.8 s
+MAX_MS = 1500           # el sonido más largo (melodías de dormir) dura ~1.4 s
 
 P12, P25, P50 = 0.125, 0.25, 0.5
 RUIDO = -1
@@ -339,6 +339,42 @@ def hecho():
         [(C6, 40, P25, .8, .7), (E6, 40, P25, .8, .7), (G6, 40, P25, .8, .7), (C7, 40, P25, .9, .8),
          (0, 30), (A6, 50, P50, .8, .7), (C7, 60, P50, .9, .8), (E7, 240, P12, .9, 0.0)],
     )))
+
+
+def melodia_dormir(momento="dia"):
+    """Antes de apagarse: melodía corta según la hora, distinta cada vez.
+    Día: brillante y hacia arriba. Tarde: cálida, bajando. Noche: suave, como canción de cuna."""
+    if momento == "noche":
+        n = 140
+        opciones = (
+            [(E5, n, P50, .5, .4), (G5, n, P50, .5, .4), (A5, n, P50, .5, .4), (G5, n, P50, .5, .4),
+             (E5, n, P50, .5, .4), (D5, n, P50, .4, .3), (C5, 450, P50, .4, 0.0)],
+            [(C5, 160, P50, .5, .4), (E5, 160, P50, .5, .4), (G5, 160, P50, .5, .4), (E5, 160, P50, .5, .4),
+             (D5, 160, P50, .4, .3), (C5, 500, P50, .4, 0.0)],
+            [(G5, 180, P50, .5, .4), (E5, 180, P50, .5, .4), (C5, 180, P50, .4, .4), (0, 60),
+             (D5, 180, P50, .4, .3), (C5, 550, P50, .4, 0.0)],
+        )
+    elif momento == "tarde":
+        n = 110
+        opciones = (
+            [(E6, n, P50, .6, .5), (D6, n, P50, .6, .5), (C6, n, P50, .6, .5), (A5, n, P50, .6, .5),
+             (G5, n, P50, .6, .5), (0, 40), (C6, 380, P25, .6, 0.0)],
+            [(G6, n, P25, .6, .5), (E6, n, P25, .6, .5), (D6, n, P25, .6, .5), (E6, n, P25, .6, .5),
+             (C6, n, P25, .6, .5), (A5, n, P25, .5, .4), (C6, 400, P50, .6, 0.0)],
+            [(A5, 120, P50, .6, .5), (C6, 120, P50, .6, .5), (D6, 120, P50, .6, .5), (C6, 120, P50, .6, .5),
+             (A5, 120, P50, .5, .4), (G5, 450, P50, .5, 0.0)],
+        )
+    else:
+        n = 80
+        opciones = (
+            [(C6, n, P25, .7, .6), (E6, n, P25, .7, .6), (G6, n, P25, .7, .6), (A6, n, P25, .7, .6),
+             (G6, n, P25, .7, .6), (E6, n, P25, .7, .6), (G6, n, P25, .7, .6), (C7, 300, P12, .8, 0.0)],
+            [(G5, n, P12, .7, .6), (A5, n, P12, .7, .6), (C6, n, P12, .7, .6), (D6, n, P12, .7, .6),
+             (E6, n, P12, .7, .6), (G6, n, P12, .7, .6), (E6, n, P12, .7, .6), (C6, 280, P25, .7, 0.0)],
+            [(E6, 70, P25, .7, .6), (G6, 70, P25, .7, .6), (C7, 70, P25, .8, .7), (0, 40),
+             (D7, 90, P50, .7, .6), (C7, 90, P50, .7, .6), (A6, 90, P50, .7, .6), (G6, 320, P50, .7, 0.0)],
+        )
+    tocar(_elegir("dormir_" + momento, opciones))
 
 
 TODOS = ("encender", "entrar", "mover", "tic", "seleccionar", "volver", "listo", "error", "aviso", "especial", "guardar",

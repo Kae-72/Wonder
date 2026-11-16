@@ -17,6 +17,23 @@ con las claves del WiFi, `pines.json`, etc.) y las grabaciones `.wav`.
 
 ---
 
+## v6.1 — 15 de noviembre de 2026 (noche)
+
+Subir al Pico: `main.py`, `sonidos.py`, `bateria.py`, `red.py`, `grabadora.py` y los 6 fondos
+nuevos `fondo_pomodoro_dia/tarde/noche.raw` y `fondo_descanso_dia/tarde/noche.raw`.
+Hub: `wonder-app/hub/grabaciones.py`.
+
+- **Fondos según la hora** (día 6–17 h, tarde 17–19 h, noche 19–6 h): en el pomodoro el cielo
+  se ve por la ventana; en el descanso, Wonder de día, al atardecer o de noche.
+- **Al dormir:** muestra a Wonder descansando según la hora y toca una melodía corta
+  (3 por cada momento del día, al azar).
+- **Batería:** se lee apagando el WiFi un instante (el pin lo comparte el chip WiFi), cada 5 min.
+  Antes leía mal con WiFi y mostraba la batería vacía. En el Shell sale `VSYS = x.xx V`.
+- **Grabadora:** el micrófono se crea una sola vez (arregla "memory allocation failed" en la
+  segunda grabación) y dos grabaciones nunca se pisan.
+- **Hub:** elige solo el modelo de Gemini disponible (Google retiró `gemini-2.5-flash`).
+- Si los botones salen cruzados: borrar `pines.json` del Pico (usa izq 14, O 15, der 16).
+
 ## v6 — 15 de noviembre de 2026
 
 Archivos del llavero que cambiaron: **todos los `.py`** de `llavero/`.

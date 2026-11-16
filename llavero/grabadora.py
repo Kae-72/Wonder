@@ -23,7 +23,7 @@ DESPLAZAMIENTO = 12        # ganancia del micrófono: 16 = sin ganancia, 12 = x1
 MIC_CANAL = 0              # 0 = pin L/R del micrófono a GND (izquierdo), 1 = L/R a 3.3V (derecho)
 MAX_MINUTOS = 90
 CARPETA = "/sd/clases"
-DESCARTAR_MS = 250         # el micrófono hace "pop" al arrancar
+DESCARTAR_MS = 300         # el micrófono hace "pop" al arrancar (y vacía lo viejo)
 
 try:
     from rapido import convertir
@@ -47,6 +47,36 @@ except ImportError:
     vfs = os
 
 _montada = False
+# El micrófono y sus búferes se crean UNA vez y se reusan en todas las grabaciones
+# (crearlos de nuevo cada vez fragmentaba la RAM: "memory allocation failed").
+_mic = None
+_crudo = None
+_pcm = None
+MUESTRAS = 1024                                    # 64 ms a 16 kHz
+
+
+def _preparar_mic():
+    global _mic, _crudo, _pcm
+    if _crudo is None:
+        _crudo = bytearray(MUESTRAS * 8)           # estéreo: 2 canales x 32 bits
+        _pcm = bytearray(MUESTRAS * 2)
+    if _mic is None:
+        import gc
+        gc.collect()
+        _mic = I2S(1, sck=Pin(MIC_SCK), ws=Pin(MIC_WS), sd=Pin(MIC_SD), mode=I2S.RX,
+                   bits=32, format=I2S.STEREO, rate=FREC, ibuf=32000)
+    return _mic
+
+
+def soltar_mic():
+    """Para dormir: apaga el micrófono (se vuelve a crear al grabar)."""
+    global _mic
+    if _mic is not None:
+        try:
+            _mic.deinit()
+        except Exception:
+            pass
+        _mic = None
 _mosfet = None
 ultimo_error = ""          # texto corto del último problema con la microSD (se muestra en pantalla)
 
@@ -139,9 +169,22 @@ def marcar_subido(nombre):
 def nombre_nuevo():
     t = time.localtime()
     if t[0] >= 2025:
-        return "clase_%04d-%02d-%02d_%02d-%02d-%02d.wav" % t[:6]
-    n = len(pendientes(incluir_subidos=True)) + 1
-    return "clase_sin_hora_%03d.wav" % n
+        base = "clase_%04d-%02d-%02d_%02d-%02d-%02d" % t[:6]
+    else:
+        base = "clase_sin_hora_%03d" % (len(pendientes(incluir_subidos=True)) + 1)
+    nombre, k = base + ".wav", 2
+    while _existe(CARPETA + "/" + nombre):            # nunca pisar una grabación
+        nombre = "%s_%d.wav" % (base, k)
+        k += 1
+    return nombre
+
+
+def _existe(ruta):
+    try:
+        os.stat(ruta)
+        return True
+    except OSError:
+        return False
 
 
 class Grabacion:
@@ -156,12 +199,10 @@ class Grabacion:
         self.nivel = 0
         self.t0 = time.ticks_ms()
         self.t_flush = self.t0
-        self.muestras = 1024                          # 64 ms a 16 kHz
-        self.crudo = bytearray(self.muestras * 8)       # estéreo: 2 canales x 32 bits
-        self.pcm = bytearray(self.muestras * 2)
+        self.mic = _preparar_mic()
+        self.crudo = _crudo
+        self.pcm = _pcm
         self.n = 0
-        self.mic = I2S(1, sck=Pin(MIC_SCK), ws=Pin(MIC_WS), sd=Pin(MIC_SD), mode=I2S.RX,
-                       bits=32, format=I2S.STEREO, rate=FREC, ibuf=32000)
         fin = time.ticks_add(time.ticks_ms(), DESCARTAR_MS)
         while time.ticks_diff(fin, time.ticks_ms()) > 0:
             self.mic.readinto(self.crudo)
@@ -184,7 +225,6 @@ class Grabacion:
         return self.segundos() < MAX_MINUTOS * 60
 
     def terminar(self):
-        self.mic.deinit()
         self.f.seek(0)
         self.f.write(_cabecera(self.bytes))
         self.f.close()

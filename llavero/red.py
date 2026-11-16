@@ -170,6 +170,14 @@ def mantener():
     return False
 
 
+def reconectar():
+    """Tras apagar el WiFi un instante (p. ej. para medir la batería): vuelve a conectar ya."""
+    global _indice, _t_ronda, _intentando
+    _indice = 0
+    _intentando = None
+    _t_ronda = time.ticks_add(time.ticks_ms(), -PAUSA_ENTRE_RONDAS_MS)
+
+
 def conectar_ya(al_esperar=None, segundos=25):
     """Conexión con espera (cuando el usuario pidió algo que necesita internet)."""
     global _indice, _t_ronda

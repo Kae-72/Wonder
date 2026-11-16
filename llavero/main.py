@@ -25,6 +25,7 @@ import time
 import json
 import os
 import gc
+import sys
 
 import red
 import bateria
@@ -341,9 +342,28 @@ def dibujar_barra():
         chico(m, x + 5, 3)
 
 
+def momento():
+    """'dia' (6-17 h), 'tarde' (17-19 h) o 'noche' (19-6 h). Sin hora: 'dia'."""
+    if not hora_ok():
+        return "dia"
+    h = time.localtime()[3]
+    return "dia" if 6 <= h < 17 else "tarde" if 17 <= h < 19 else "noche"
+
+
+def fondo_del_momento(base):
+    """fondo_<base>_<momento>.raw si existe; si no, el fondo de siempre."""
+    n = "fondo_%s_%s.raw" % (base, momento())
+    return n if existe(n) else "fondo_%s.raw" % base
+
+
 def leer_bateria():
-    pct, usb, v = bateria.leer()
-    BAT["pct"], BAT["usb"] = pct, usb
+    """Lee la batería. Con WiFi prendido, lo apaga un instante (el pin de la
+    batería lo comparte el chip WiFi) y luego se reconecta solo."""
+    pct, usb, v, apago = bateria.leer(red.wlan)
+    if apago:
+        red.reconectar()
+    if v:
+        BAT["pct"], BAT["usb"] = pct, usb
 
 
 def tick():
@@ -353,8 +373,8 @@ def tick():
     if time.ticks_diff(ahora, T["red"]) > 1000:
         T["red"] = ahora
         red.mantener()
-    if T["bat"] is None or time.ticks_diff(ahora, T["bat"]) > 20000:
-        T["bat"] = ahora
+    if not OCUPADO and (T["bat"] is None or time.ticks_diff(ahora, T["bat"]) > 300000):
+        T["bat"] = ahora                         # cada 5 min (apaga el WiFi un instante)
         leer_bateria()
     if pomo_tick():
         redibujar = True
@@ -561,10 +581,21 @@ def dormir():
     cuando una clase está por empezar."""
     import machine
     print("Durmiendo...")
-    sonar("dormir")
+    leer_bateria()
+    # despedida: Wonder descansando según la hora + una melodía corta
+    global BARRA
+    antes = BARRA
+    BARRA = False
+    poner_fondo(fondo_del_momento("descanso"), AZUL)
+    mostrar()
+    BARRA = antes
+    sonar("melodia_dormir", momento())
     t0 = time.ticks_ms()
-    while sonidos and sonidos.sonando() and time.ticks_diff(time.ticks_ms(), t0) < 1200:
+    while sonidos and sonidos.sonando() and time.ticks_diff(time.ticks_ms(), t0) < 2500:
         time.sleep_ms(20)
+    time.sleep_ms(800)
+    if "grabadora" in sys.modules:
+        sys.modules["grabadora"].soltar_mic()
     bl.value(0)
     cmd(0x28)                                   # pantalla apagada
     cmd(0x10)                                   # pantalla en reposo
@@ -728,7 +759,7 @@ def pomo_tick():
 def dibujar_pomodoro():
     est = POMO["estado"]
     descanso = est != "parado" and POMO["fase"] == "descanso"
-    poner_fondo("fondo_descanso.raw" if descanso else "fondo_pomodoro.raw",
+    poner_fondo(fondo_del_momento("descanso" if descanso else "pomodoro"),
                 VERDE if descanso else CLARO)
     # ayuda arriba a la izquierda
     if est == "parado":
@@ -1232,6 +1263,8 @@ def pantalla_grabadora():
             finally:
                 nombre = g.terminar()
                 OCUPADO = False
+                gc.collect()
+                print("RAM libre tras grabar:", gc.mem_free())
             sonar("guardar")
             mensaje("Guardado", nombre[6:22])
             time.sleep(1)

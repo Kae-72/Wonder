@@ -43,8 +43,41 @@ MODELO_WHISPER = os.environ.get("WONDER_WHISPER", "small")
 #                   "gemini" = siempre Gemini (no hay que instalar nada pesado).
 #                   "whisper" = siempre Whisper (todo queda en el computador).
 TRANSCRIPCION = os.environ.get("WONDER_TRANSCRIPCION", "auto").lower()
-MODELO_GEMINI = "gemini-flash-latest"
-MODELO_GEMINI_RESPALDO = "gemini-2.5-flash"
+MODELO_GEMINI = os.environ.get("WONDER_GEMINI_MODELO", "gemini-flash-latest")
+# Si ese falla, el hub le pregunta a Google que modelos hay y usa el "Flash" mas nuevo.
+# (Google retira modelos cada pocos meses; asi no hay que cambiar el codigo.)
+_modelos = None
+
+
+def modelos_gemini(cliente):
+    """Lista de modelos a probar, en orden: el configurado y los Flash mas nuevos disponibles."""
+    global _modelos
+    if _modelos is not None:
+        return _modelos
+    lista = [MODELO_GEMINI]
+    try:
+        estables, previas = [], []
+        for m in cliente.models.list():
+            nombre = (getattr(m, "name", "") or "").split("/")[-1]
+            acciones = getattr(m, "supported_actions", None) or getattr(m, "supported_generation_methods", None) or []
+            if "generateContent" not in acciones or "flash" not in nombre:
+                continue
+            if any(x in nombre for x in ("lite", "image", "tts", "live", "audio", "embedding", "omni", "transcribe", "robotics")):
+                continue
+            (previas if ("preview" in nombre or "exp" in nombre) else estables).append(nombre)
+
+        def version(n):
+            numeros = re.findall(r"\d+(?:\.\d+)?", n)
+            return float(numeros[0]) if numeros else 0.0
+
+        estables.sort(key=version, reverse=True)
+        previas.sort(key=version, reverse=True)
+        lista += estables[:3] + previas[:1]
+        print("Modelos de Gemini disponibles:", ", ".join(estables[:3] + previas[:1]) or "ninguno")
+    except Exception as e:
+        print(f"No pude listar los modelos de Gemini: {e}")
+    _modelos = [m for i, m in enumerate(lista) if m and m not in lista[:i]]
+    return _modelos
 
 EXTENSIONES = (".wav", ".mp3", ".m4a", ".ogg", ".webm", ".flac")
 REVISAR_CADA_SEG = 15
@@ -204,7 +237,7 @@ def transcribir_con_gemini(ruta_audio_):
                   "Devuelve SOLO el texto hablado, en parrafos, sin titulos, sin Markdown y sin comentarios. "
                   "Si no hay voz, responde exactamente: (sin voz)")
         ultimo = None
-        for modelo in (MODELO_GEMINI, MODELO_GEMINI_RESPALDO):
+        for modelo in modelos_gemini(cliente):
             try:
                 print(f"Transcribiendo con Gemini ({modelo})...")
                 r = cliente.models.generate_content(model=modelo, contents=[archivo, prompt])
@@ -289,7 +322,7 @@ def resumir(texto):
     )
 
     ultimo_error = None
-    for modelo in (MODELO_GEMINI, MODELO_GEMINI_RESPALDO):
+    for modelo in modelos_gemini(cliente):
         try:
             print(f"Resumiendo con Gemini ({modelo})...")
             respuesta = cliente.models.generate_content(model=modelo, contents=prompt)

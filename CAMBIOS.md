@@ -17,6 +17,18 @@ con las claves del WiFi, `pines.json`, etc.) y las grabaciones `.wav`.
 
 ---
 
+## v7.1 — 16 de noviembre de 2026 (noche)
+
+Subir al Pico: `main.py`, `bateria.py`, `sonidos.py`, `grabadora.py`. **Borrar `pines.json` del Pico.**
+
+- **Arregla los timeouts del WiFi:** desde la v6.1 el llavero tocaba el pin GP29 para medir la
+  batería, pero ese pin lo usa el chip WiFi y lo dejaba colgado. Ya no se toca nunca.
+- **Batería:** la barra muestra el rayo con USB y "?" sin USB. Para ver el porcentaje hay que
+  poner un divisor de 2 resistencias de 100k hacia GP27 (instrucciones en `bateria.py`).
+- **Menos memoria:** los fondos se leen directo de la memoria del Pico (sin copia en RAM),
+  los sonidos usan 11 kHz y el micrófono un búfer menor.
+- **Botones por defecto corregidos:** izquierdo GP15, centro GP14, derecho GP16.
+
 ## v7 — 16 de noviembre de 2026
 
 Subir al Pico: **`main.py`** y los archivos nuevos: `icono_wonder.spr`, `icono_wonder_mini.spr`,

@@ -29,7 +29,7 @@ PIN_DIN = 22
 PIN_SD = 26           # encender / apagar el amplificador
 
 VOLUMEN = 60          # 0 a 100. Súbelo o bájalo según el parlante.
-FREC_MUESTREO = 16000
+FREC_MUESTREO = 11025   # suficiente para sonidos de 8 bits y usa menos RAM
 MAX_MS = 1500           # el sonido más largo (melodías de dormir) dura ~1.4 s
 
 P12, P25, P50 = 0.125, 0.25, 0.5

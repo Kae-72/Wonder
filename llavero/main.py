@@ -201,25 +201,18 @@ def cargar_pantalla(nombre, indice=0):
         f.readinto(lienzo)
 
 
-_fondo = {"nombre": None, "datos": bytearray(TAM_PANTALLA)}   # reservado al arrancar
-
-
 def poner_fondo(nombre, respaldo=AZUL):
-    """Copia un fondo .raw al lienzo (queda guardado en memoria para ir rápido).
+    """Carga un fondo .raw directo al lienzo (sin copia en RAM, para ahorrar memoria).
     Si no existe el archivo, pinta un color (placeholder)."""
-    if _fondo["nombre"] != nombre:
-        if existe(nombre):
-            with open(nombre, "rb") as f:
-                f.readinto(_fondo["datos"])
-            _fondo["nombre"] = nombre
-        else:
-            fb.fill(respaldo)
-            return
-    lienzo[:] = _fondo["datos"]
+    if existe(nombre):
+        with open(nombre, "rb") as f:
+            f.readinto(lienzo)
+    else:
+        fb.fill(respaldo)
 
 
 # ---------------- Botones ----------------
-PINES = {"izq": 14, "o": 15, "der": 16}   # izquierdo GP14, centro GP15, derecho GP16
+PINES = {"izq": 15, "o": 14, "der": 16}   # izquierdo GP15, centro GP14, derecho GP16
 try:
     with open("pines.json") as f:
         PINES.update({k: v for k, v in json.load(f).items() if v is not None and k in PINES})
@@ -358,13 +351,11 @@ def fondo_del_momento(base):
 
 
 def leer_bateria():
-    """Lee la batería. Con WiFi prendido, lo apaga un instante (el pin de la
-    batería lo comparte el chip WiFi) y luego se reconecta solo."""
-    pct, usb, v, apago = bateria.leer(red.wlan)
-    if apago:
-        red.reconectar()
-    if v:
-        BAT["pct"], BAT["usb"] = pct, usb
+    """USB sí/no siempre; el porcentaje solo si se instaló el divisor (ver bateria.py)."""
+    pct, usb, v = bateria.leer()
+    BAT["usb"] = usb
+    if pct is not None:
+        BAT["pct"] = pct
 
 
 def tick():
@@ -374,8 +365,8 @@ def tick():
     if time.ticks_diff(ahora, T["red"]) > 1000:
         T["red"] = ahora
         red.mantener()
-    if not OCUPADO and (T["bat"] is None or time.ticks_diff(ahora, T["bat"]) > 300000):
-        T["bat"] = ahora                         # cada 5 min (apaga el WiFi un instante)
+    if T["bat"] is None or time.ticks_diff(ahora, T["bat"]) > 10000:
+        T["bat"] = ahora                         # cada 10 s: USB y (si hay divisor) batería
         leer_bateria()
     if pomo_tick():
         redibujar = True
@@ -590,7 +581,6 @@ def dormir():
     cuando una clase está por empezar."""
     import machine
     print("Durmiendo...")
-    leer_bateria()
     # despedida: Wonder descansando según la hora + una melodía corta
     global BARRA
     antes = BARRA

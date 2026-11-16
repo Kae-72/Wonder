@@ -1,51 +1,27 @@
-# Wonder - nivel de batería
+# Wonder - batería
 #
-# El Pico 2 W mide su propio voltaje de entrada (VSYS) en el canal 3 del ADC.
-# En tu placa: batería -> cargador -> diodo Schottky -> VSYS.
-#   - Con USB conectado, VSYS sube a ~4.7-5 V  -> se muestra "cargando".
-#   - Solo con batería, VSYS = batería - lo que se come el diodo (~0.25 V).
-# El porcentaje sale de la curva típica de una LiPo de 3.7 V.
+# En el Pico 2 W el pin que mide VSYS (GP29) lo usa el chip WiFi desde que el Pico
+# arranca: tocarlo deja el WiFi colgado (timeouts). Por eso el llavero NO lo toca.
+#
+# Lo que sí se puede saber siempre: si hay USB conectado (el chip WiFi lo dice
+# por su pin WL_GPIO2). La barra muestra el rayo con USB y "?" sin USB.
+#
+# Para ver el PORCENTAJE hace falta un arreglo de hardware de 2 resistencias:
+#   Batería + (salida OUT+ del cargador) --[100k]--+--[100k]-- GND
+#                                                  |
+#                                                GP27 (patita 32)
+# y poner PIN_BATERIA = 27 abajo. (GP27 está libre si no usan el sensor de vibración.)
 
 from machine import ADC, Pin
-import time
 
-FACTOR = 3 * 3.3 / 65535      # VSYS llega al ADC dividido entre 3
-CAIDA_DIODO = 0.25            # ajústalo si al medir con multímetro no coincide
-UMBRAL_USB = 4.45             # por encima de esto hay USB (la LiPo llega máx. a 4.2)
+PIN_BATERIA = None            # 27 si se hace el divisor de arriba
+DIVISOR = 2.0                 # 100k / 100k divide entre 2
+FACTOR = 3.3 / 65535
 
-# (voltaje de la batería, porcentaje)
 CURVA = ((4.15, 100), (4.05, 90), (3.97, 80), (3.90, 70), (3.84, 60), (3.79, 50),
          (3.75, 40), (3.71, 30), (3.67, 20), (3.61, 10), (3.50, 5), (3.30, 0))
 
-_adc = None
 _historial = []
-
-
-def vsys(wlan=None):
-    """Voltaje de VSYS. El pin 29 lo comparte el chip WiFi, así que si el WiFi
-    está prendido se apaga un instante para medir. Devuelve (voltaje, apago_wifi)."""
-    global _adc
-    apago = False
-    if wlan is not None:
-        try:
-            if wlan.active():
-                wlan.active(False)
-                apago = True
-                time.sleep_ms(30)
-        except Exception:
-            pass
-    try:
-        Pin(25, Pin.OUT, value=1)          # aparta al chip WiFi del pin 29
-        Pin(29, Pin.IN, pull=None)
-        _adc = ADC(Pin(29))
-        s = 0
-        for _ in range(16):
-            s += _adc.read_u16()
-        v = s / 16 * FACTOR
-    finally:
-        if apago:
-            wlan.active(True)              # el driver del WiFi vuelve a tomar el pin 29
-    return v, apago
 
 
 def porcentaje(v_bat):
@@ -57,21 +33,29 @@ def porcentaje(v_bat):
     return 0
 
 
-def leer(wlan=None):
-    """Devuelve (porcentaje o None, usb_conectado, voltaje_vsys o 0 si la lectura no sirve, apago_wifi)."""
+def usb_conectado():
+    """True/False si hay USB; None si no se puede saber."""
     try:
-        v, apago = vsys(wlan)
+        return Pin("WL_GPIO2", Pin.IN).value() == 1
+    except Exception:
+        return None
+
+
+def leer():
+    """Devuelve (porcentaje o None, usb_conectado, voltaje o 0)."""
+    usb = bool(usb_conectado())
+    if PIN_BATERIA is None:
+        return None, usb, 0
+    try:
+        adc = ADC(Pin(PIN_BATERIA))
+        s = 0
+        for _ in range(16):
+            s += adc.read_u16()
+        v = s / 16 * FACTOR * DIVISOR
     except Exception as e:
         print("Bateria:", e)
-        return None, False, 0, False
-    print("VSYS = %.2f V" % v)
-    if not 2.5 < v < 5.8:                  # lectura imposible: se ignora
-        return None, False, 0, apago
-    if v >= UMBRAL_USB:
-        _historial.clear()
-        return None, True, v, apago
-    _historial.append(v + CAIDA_DIODO)
+        return None, usb, 0
+    _historial.append(v)
     if len(_historial) > 6:
         _historial.pop(0)
-    promedio = sum(_historial) / len(_historial)
-    return porcentaje(promedio), False, v, apago
+    return porcentaje(sum(_historial) / len(_historial)), usb, v

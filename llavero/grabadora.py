@@ -64,7 +64,7 @@ def _preparar_mic():
         import gc
         gc.collect()
         _mic = I2S(1, sck=Pin(MIC_SCK), ws=Pin(MIC_WS), sd=Pin(MIC_SD), mode=I2S.RX,
-                   bits=32, format=I2S.STEREO, rate=FREC, ibuf=32000)
+                   bits=32, format=I2S.STEREO, rate=FREC, ibuf=24000)
     return _mic
 
 

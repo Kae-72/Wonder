@@ -14,6 +14,7 @@ Wonder is the name of the mascot! It is also the name of the app, and the physic
 - **Pomodoro timer** for phoneless study sessions (it keeps running in the background).
 - **Google Calendar**: shows your next 7 days, plays a sound 10 minutes before each class, and lets you mark a task or class as **done** ("¡Hecho!"), with anti-cheat rules checked against Google Calendar.
 - **Status bar** with clock, WiFi and battery; remembers several WiFi networks (home, university, phone hotspot) and connects by itself; sleeps on battery when idle.
+- **Wonder's room**: a menu option where the mascot shows its mood (happy, normal, sad, angry) with mood, energy and study bars, based on your completed tasks, Pomodoro minutes and missed classes. Accessories unlock as you complete tasks.
 - **Game Boy style sounds** (original, pentatonic scale) through a small speaker.
 - **Web app** to log in with Google, link the keychain to WiFi, set the Pomodoro, read the recordings and customize Wonder.
 

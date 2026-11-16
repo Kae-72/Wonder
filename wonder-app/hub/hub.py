@@ -408,7 +408,7 @@ def pico_eventos():
         return _error(e, 502)
     datos["ahora"] = ahora_para_pico()
     r = logros.resumen()
-    datos["logros"] = {"total": r["total"], "hoy": r["hoy"]}
+    datos["logros"] = {"total": r["total"], "hoy": r["hoy"], "racha": r["racha"]}
     _pico_visto(eventos=len(datos["eventos"]))
     return Response(json.dumps(datos, ensure_ascii=True, separators=(",", ":")), mimetype="application/json")
 

@@ -17,6 +17,27 @@ con las claves del WiFi, `pines.json`, etc.) y las grabaciones `.wav`.
 
 ---
 
+## v7 — 16 de noviembre de 2026
+
+Subir al Pico: **`main.py`** y los archivos nuevos: `icono_wonder.spr`, `icono_wonder_mini.spr`,
+`nombre_wonder.spr`, `fondo_inventario.raw`, `wonder_base.spr`, `wonder_feliz.spr`,
+`wonder_triste.spr`, `wonder_enojado.spr`, `acc_gafas.spr`, `acc_bufanda.spr`,
+`fondo_grabadora_dia.raw`, `fondo_grabadora_tarde.raw`, `fondo_grabadora_noche.raw`
+(y todo lo de v6.1 si aún no se subió). Hub: `wonder-app/hub/hub.py`.
+
+- **Nueva opción del menú: Wonder.** Inventario con Wonder según su ánimo (feliz, normal,
+  triste, enojado), tres barras (ánimo, energía, estudio) y una frase.
+  - Ánimo: ¡Hecho! de hoy confirmados por el hub, racha de días, minutos de pomodoro
+    terminados, visitar a Wonder una vez al día; baja con tareas o clases de las últimas 24 h
+    que terminaron sin marcar (2 o más = enojado).
+  - Energía: según la hora (de noche tiene sueño) y la batería.
+  - Estudio: minutos de pomodoro terminados hoy (meta: 100).
+  - Accesorios: gafas y bufanda desde el inicio; 3 espacios "???" que se desbloquean con
+    10, 25 y 50 ¡Hecho! (cuando lleguen sus sprites). Solo cuentan los ¡Hecho! confirmados
+    por el hub, así no se puede hacer trampa desde el llavero.
+- **Grabadora:** el fondo cambia según la hora (cielo + capa blanca + Wonder escuchando).
+- Herramienta nueva: `herramientas/preparar_inventario.py` (y `herramientas/accesorios/`).
+
 ## v6.1 — 15 de noviembre de 2026 (noche)
 
 Subir al Pico: `main.py`, `sonidos.py`, `bateria.py`, `red.py`, `grabadora.py` y los 6 fondos

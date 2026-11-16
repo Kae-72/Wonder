@@ -13,6 +13,7 @@
 #   Pomodoro:    O = empezar / pausar,  IZQ / DER = minutos (antes de empezar)
 #                en pausa: IZQ = terminar.  Mantener O = volver (el pomodoro sigue)
 #   Grabadora:   O = grabar / parar,  DER = subir grabaciones,  mantener O = volver
+#   Wonder:      IZQ / DER = elegir accesorio,  O = poner / quitar,  mantener O = volver
 #
 # Archivos en el Pico: los .raw y .spr de las pantallas, sonidos.py, red.py,
 # bateria.py, grabadora.py, rapido.py, sdcard.py.
@@ -46,7 +47,7 @@ FPS_INICIO = 3
 LARGO_MS = 700              # cuánto mantener O para "volver"
 POMODORO = {"estudio": 25, "descanso": 5, "sesiones": 4}   # la app puede cambiarlo
 
-APPS = [("calendario", "Calendario"), ("pomodoro", "Pomodoro"), ("grabadora", "Grabadora")]
+APPS = [("calendario", "Calendario"), ("pomodoro", "Pomodoro"), ("grabadora", "Grabadora"), ("wonder", "Wonder")]
 BURBUJA_CENTRO = (39, 17)
 ICONO_SEL = (114, 62)
 ICONO_IZQ = (75, 62)
@@ -457,6 +458,7 @@ def sincronizar():
     if codigo == 200 and d:
         if d.get("logros"):
             LOGROS.update(d["logros"])
+            LOGROS["fecha"] = hoy_str()
         datos_cal = d
         t_datos = time.ticks_ms()
         if d.get("ahora"):
@@ -502,6 +504,11 @@ def _guardar_hechos():
             json.dump(HECHOS, f)
     except OSError:
         pass
+
+
+def hoy_str():
+    t = time.localtime()
+    return "%04d-%02d-%02d" % t[:3]
 
 
 def ahora_iso():
@@ -552,6 +559,8 @@ def marcar_hecho(ev):
         return
     HECHOS["marcados"].append(ev["id"])
     HECHOS["pendientes"].append({"id": ev["id"], "t": ahora_iso()})
+    if LOGROS.get("fecha") != hoy_str():
+        LOGROS["hoy"], LOGROS["fecha"] = 0, hoy_str()
     LOGROS["hoy"] += 1
     LOGROS["total"] += 1
     _guardar_hechos()
@@ -742,6 +751,7 @@ def pomo_tick():
         return False
     ahora = time.ticks_ms()
     if POMO["fase"] == "estudio":
+        sumar_estudio(POMODORO["estudio"])            # para el ánimo de Wonder
         if POMO["sesion"] >= POMODORO["sesiones"]:
             pomo_terminar()
             sonar("listo")
@@ -833,6 +843,217 @@ def pantalla_pomodoro():
             cambio = True
         if cambio:
             dibujar_pomodoro()
+        time.sleep_ms(15)
+
+
+# ======================================================================
+#  WONDER: ánimo e inventario
+#  El ánimo sale de cosas que no se pueden falsear desde el llavero:
+#  ¡Hecho! confirmados por el hub, racha de días, minutos de pomodoro
+#  terminados, y tareas o clases que se pasaron sin marcar.
+# ======================================================================
+ARCH_WONDER = "wonder_estado.json"
+META_ESTUDIO_MIN = 100                      # minutos de pomodoro al día para llenar "estudio"
+# (id, nombre, ¡Hecho! necesarios para desbloquear). Los "???" esperan sus sprites.
+COSMETICOS = (("gafas", "Gafas", 0), ("bufanda", "Bufanda", 0), ("nuevo1", "???", 10),
+              ("nuevo2", "???", 25), ("nuevo3", "???", 50))
+POS_CAPA = {"wonder_base": (54, 10), "wonder_feliz": (54, 10), "wonder_triste": (55, 22),
+            "wonder_enojado": (54, 10), "acc_gafas": (62, 58), "acc_bufanda": (74, 78)}
+EST_W = {"puestos": ["gafas"], "fecha": "", "min_estudio": 0, "visita": ""}
+try:
+    with open(ARCH_WONDER) as f:
+        EST_W.update(json.load(f))
+except (OSError, ValueError):
+    pass
+
+
+def guardar_wonder():
+    try:
+        with open(ARCH_WONDER, "w") as f:
+            json.dump(EST_W, f)
+    except OSError:
+        pass
+
+
+def _dia_wonder():
+    if hora_ok() and EST_W["fecha"] != hoy_str():
+        EST_W.update(fecha=hoy_str(), min_estudio=0)
+
+
+def sumar_estudio(minutos):
+    _dia_wonder()
+    EST_W["min_estudio"] += minutos
+    guardar_wonder()
+
+
+def hechos_hoy():
+    return LOGROS.get("hoy", 0) if LOGROS.get("fecha") == hoy_str() else 0
+
+
+def vencidos():
+    """Tareas o clases de las últimas 24 h que ya terminaron y no se marcaron."""
+    if not datos_cal or not hora_ok():
+        return 0
+    ahora = ahora_iso()
+    t = time.localtime(time.time() - 86400)
+    ayer = "%04d-%02d-%02dT%02d:%02d" % t[:5]
+    return sum(1 for ev in datos_cal.get("eventos", [])
+               if ev.get("fin") and ayer <= ev["fin"] <= ahora and not es_hecho(ev))
+
+
+ENERGIA_HORA = (10, 8, 5, 5, 10, 30, 60, 75, 85, 90, 95, 100, 95, 90, 85, 80, 75, 70, 65, 55, 45, 35, 25, 15)
+
+
+def medidores():
+    """(ánimo, energía, estudio, vencidos), cada medidor de 0 a 100."""
+    _dia_wonder()
+    venc = vencidos()
+    animo = (55 + 12 * min(hechos_hoy(), 3) + 2 * min(LOGROS.get("racha", 0), 5)
+             + min(EST_W["min_estudio"], 100) // 10 - 15 * min(venc, 3)
+             + (5 if EST_W["visita"] == hoy_str() else 0))
+    energia = ENERGIA_HORA[time.localtime()[3]] if hora_ok() else 70
+    if BAT["pct"] is not None:
+        energia = (energia * 7 + BAT["pct"] * 3) // 10          # con poca batería, Wonder se cansa
+    estudio = EST_W["min_estudio"] * 100 // META_ESTUDIO_MIN
+    lim = lambda v: max(0, min(100, v))
+    return lim(animo), lim(energia), lim(estudio), venc
+
+
+def emocion(animo, venc):
+    if venc >= 2:
+        return "enojado"
+    if animo < 40:
+        return "triste"
+    if animo >= 70:
+        return "feliz"
+    return "base"
+
+
+FRASES = {
+    "feliz": ("Bien hecho!", "Vamos genial", "Me encanta|estudiar contigo", "Que buen dia"),
+    "base": ("Que hacemos|hoy?", "Un pomodoro?", "Aqui estoy", "Marca lo que|cumplas"),
+    "triste": ("Te extrane...", "Hacemos una|tarea juntos?", "Un pomodoro|me animaria"),
+    "enojado": ("Se te pasaron|tareas!", "Marca lo que|hiciste", "Hmph."),
+}
+
+
+def frase(emo, energia):
+    import random
+    if BAT["pct"] is not None and BAT["pct"] < 15:
+        return "Cargame|porfa"
+    if energia < 25 and emo != "enojado":
+        return "Zzz... ya es|tarde"
+    opciones = FRASES[emo]
+    return opciones[random.getrandbits(8) % len(opciones)]
+
+
+_spr_cache = {}
+
+
+def capa(nombre):
+    if nombre not in _spr_cache:
+        if len(_spr_cache) > 4:
+            _spr_cache.clear()
+            gc.collect()
+        _spr_cache[nombre] = cargar_spr(nombre + ".spr")
+    return _spr_cache[nombre]
+
+
+def pegar_capa(nombre):
+    s = capa(nombre)
+    if s:
+        x, y = POS_CAPA.get(nombre, (0, 0))
+        fb.blit(s[0], x, y, CLAVE_FB)
+
+
+def icono_medidor(tipo, x, y, c):
+    figuras = {"animo": ((1, 0), (2, 0), (4, 0), (5, 0), (0, 1), (3, 1), (6, 1), (0, 2), (6, 2),
+                         (1, 3), (5, 3), (2, 4), (4, 4), (3, 5)),
+               "energia": ((3, 0), (2, 1), (1, 2), (2, 2), (3, 2), (4, 2), (3, 3), (2, 4), (1, 5)),
+               "estudio": ((0, 0), (1, 0), (2, 0), (4, 0), (5, 0), (6, 0), (0, 1), (3, 1), (6, 1),
+                           (0, 2), (3, 2), (6, 2), (0, 3), (3, 3), (6, 3), (0, 4), (1, 4), (2, 4),
+                           (4, 4), (5, 4), (6, 4))}
+    for px, py in figuras[tipo]:
+        fb.pixel(x + px, y + py, c)
+
+
+def dibujar_wonder(sel, texto):
+    animo, energia, estudio, venc = medidores()
+    emo = emocion(animo, venc)
+    poner_fondo("fondo_inventario.raw", CLARO)
+    pegar_capa("wonder_" + emo)
+    for acc in EST_W["puestos"]:
+        pegar_capa("acc_" + acc)
+    texto_borde("WONDER", 3, 3)
+    for k, linea in enumerate(texto.split("|")):
+        texto_borde(linea, 3, 16 + k * 10, AMARILLO)
+    x, y = 111, 16
+    panel(x, y, 47, 36)
+    for k, (tipo, v, c) in enumerate((("animo", animo, ROJO), ("energia", energia, AMARILLO),
+                                     ("estudio", estudio, AZUL))):
+        yy = y + 4 + k * 10
+        icono_medidor(tipo, x + 3, yy, NAVY if tipo != "animo" else ROJO)
+        fb.rect(x + 12, yy, 32, 6, NAVY)
+        relleno = VERDE if v >= 60 else AMARILLO if v >= 30 else ROJO
+        fb.fill_rect(x + 13, yy + 1, 30 * v // 100, 4, relleno if tipo == "animo" else c)
+    ident, nombre, necesita = COSMETICOS[sel]
+    bloqueado = LOGROS.get("total", 0) < necesita
+    panel(2, 108, 156, 18)
+    fb.text("<", 5, 113, GRIS)
+    fb.text(">", 147, 113, GRIS)
+    if bloqueado:
+        fb.text(nombre, 16, 113, GRIS)
+        fb.text("%d Hecho!" % necesita, 72, 113, GRIS)
+    else:
+        fb.text(nombre[:9], 16, 113, NAVY)
+        puesto = ident in EST_W["puestos"]
+        fb.text("Puesto" if puesto else "O poner", 90, 113, VERDE if puesto else GRIS)
+    mostrar()
+    return emo
+
+
+def pantalla_wonder():
+    if EST_W["visita"] != hoy_str() and hora_ok():
+        EST_W["visita"] = hoy_str()             # visitar a Wonder una vez al día lo alegra un poco
+        guardar_wonder()
+    sel = 0
+    animo, energia, _, venc = medidores()
+    emo = emocion(animo, venc)
+    texto = frase(emo, energia)
+    dibujar_wonder(sel, texto)
+    sonar({"feliz": "hecho", "triste": "volver", "enojado": "error"}.get(emo, "seleccionar"))
+    while True:
+        e_izq, e_der, e_o = b_izq.leer(), b_der.leer(), b_o.leer()
+        if e_o == "largo":
+            sonar("volver")
+            esperar_soltar()
+            _spr_cache.clear()
+            gc.collect()
+            return "menu"
+        paso = -1 if e_izq == "presion" else 1 if e_der == "presion" else 0
+        if paso:
+            sel = (sel + paso) % len(COSMETICOS)
+            sonar("mover", paso, sel)
+            dibujar_wonder(sel, texto)
+        if e_o == "corto":
+            ident, nombre, necesita = COSMETICOS[sel]
+            if LOGROS.get("total", 0) < necesita:
+                sonar("error")
+                texto = "Necesitas|%d Hecho!" % necesita
+            elif not existe("acc_%s.spr" % ident):
+                sonar("error")
+                texto = "Pronto..."
+            elif ident in EST_W["puestos"]:
+                EST_W["puestos"].remove(ident)
+                sonar("volver")
+            else:
+                EST_W["puestos"].append(ident)
+                sonar("guardar")
+                texto = "Me queda|bien?"
+            guardar_wonder()
+            dibujar_wonder(sel, texto)
+        if tick():
+            dibujar_wonder(sel, texto)
         time.sleep_ms(15)
 
 
@@ -1094,7 +1315,7 @@ def pantalla_calendario():
 #  GRABADORA
 # ======================================================================
 def dibujar_grabadora(estado_sd, pendientes, nota=""):
-    poner_fondo("fondo_grabadora.raw", CLARO)
+    poner_fondo(fondo_del_momento("grabadora"), CLARO)
     texto_borde("O grabar", 3, 3)
     x, y, w, h = 2, 99, 104, 27
     panel(x, y, w, h)
@@ -1460,6 +1681,7 @@ ESTADOS = {
     "calendario": pantalla_calendario,
     "pomodoro": pantalla_pomodoro,
     "grabadora": pantalla_grabadora,
+    "wonder": pantalla_wonder,
 }
 
 init_pantalla()

@@ -368,6 +368,8 @@ def tick():
     if T["bat"] is None or time.ticks_diff(ahora, T["bat"]) > 10000:
         T["bat"] = ahora                         # cada 10 s: USB y (si hay divisor) batería
         leer_bateria()
+    if sonidos:
+        sonidos.revisar()                        # que el sonido nunca se quede "mudo"
     if pomo_tick():
         redibujar = True
     espera = REFRESCO_SEG * 1000 * (1 if T["sync_ok"] else 3)   # si falló, reintenta más tarde

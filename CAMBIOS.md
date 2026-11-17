@@ -17,6 +17,14 @@ con las claves del WiFi, `pines.json`, etc.) y las grabaciones `.wav`.
 
 ---
 
+## v7.2 — 16 de noviembre de 2026 (noche)
+
+Subir al Pico: `sonidos.py` y `main.py`.
+
+- **El sonido ya no se queda mudo:** si la cadena de audio se corta (el Pico estaba ocupado con
+  el WiFi o la memoria), se vuelve a enganchar sola.
+- `VOLUMEN = 35` por defecto para cuidar el parlante de 8 Ω 0,5 W (no pasar de ~45).
+
 ## v7.1 — 16 de noviembre de 2026 (noche)
 
 Subir al Pico: `main.py`, `bateria.py`, `sonidos.py`, `grabadora.py`. **Borrar `pines.json` del Pico.**

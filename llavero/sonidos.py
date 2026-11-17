@@ -21,6 +21,7 @@
 
 from machine import Pin, I2S
 import struct
+import time
 
 # --- Pines del amplificador (hoja "Wonder · Pines") ---
 PIN_BCLK = 20
@@ -28,7 +29,7 @@ PIN_LRC = 21          # tiene que ser BCLK + 1
 PIN_DIN = 22
 PIN_SD = 26           # encender / apagar el amplificador
 
-VOLUMEN = 60          # 0 a 100. Súbelo o bájalo según el parlante.
+VOLUMEN = 35          # 0 a 100. Con parlante de 8 ohm 0.5 W no pasar de ~45.
 FREC_MUESTREO = 11025   # suficiente para sonidos de 8 bits y usa menos RAM
 MAX_MS = 1500           # el sonido más largo (melodías de dormir) dura ~1.4 s
 
@@ -115,19 +116,35 @@ _SILENCIO = memoryview(bytearray(TROZO))
 _detenido = False
 
 
+_t_cadena = 0
+
+
 def _alimentar(_arg):
     # El amplificador queda SIEMPRE encendido y recibiendo datos (silencio cuando
     # no hay sonido). Así cada sonido arranca al instante y no se pierde el comienzo.
-    global _pos, _ocupado
-    if _detenido:
+    # Cada trozo pide el siguiente: es una "cadena". Si el Pico está muy ocupado y se
+    # pierde un eslabón, revisar() la vuelve a enganchar.
+    global _pos, _ocupado, _t_cadena
+    if _detenido or _audio is None:
         return
-    if _buf is not None and _pos < len(_buf):
-        trozo = _buf[_pos:_pos + TROZO]
-        _pos += len(trozo)
-        _audio.write(trozo)
-    else:
-        _ocupado = False
-        _audio.write(_SILENCIO)
+    _t_cadena = time.ticks_ms()
+    try:
+        if _buf is not None and _pos < len(_buf):
+            trozo = _buf[_pos:_pos + TROZO]
+            _pos += len(trozo)
+            _audio.write(trozo)
+        else:
+            _ocupado = False
+            _audio.write(_SILENCIO)
+    except Exception as e:
+        print("Sonido (cadena):", e)
+
+
+def revisar():
+    """Si la cadena de audio se cortó (más de 0,4 s sin pedir datos), la reengancha."""
+    if _audio is not None and not _detenido and time.ticks_diff(time.ticks_ms(), _t_cadena) > 400:
+        print("Sonido: cadena reenganchada")
+        _alimentar(None)
 
 
 def iniciar():
@@ -173,15 +190,17 @@ def tocar(notas, clave=None):
     _buf = memoryview(_BUF)[:n]
     _pos = 0
     _ocupado = True
+    revisar()
 
 
 def sonando():
     return _ocupado
 
 
-def esperar():
-    import time
-    while _ocupado:
+def esperar(max_ms=3000):
+    fin = time.ticks_add(time.ticks_ms(), max_ms)
+    while _ocupado and time.ticks_diff(fin, time.ticks_ms()) > 0:
+        revisar()
         time.sleep_ms(5)
 
 

@@ -117,7 +117,8 @@ def leer_wonder():
 
 
 PICO = {"visto": None, "ip": None, "wonder_version": None, "eventos": None,
-        "bateria": None, "usb": None, "red": None, "redes": None}
+        "bateria": None, "usb": None, "red": None, "redes": None,
+        "racha": None, "energia": None, "comida": None, "juego": None, "version": None}
 
 
 def ahora_para_pico():
@@ -254,6 +255,11 @@ def api_estado():
             "usb": pico["usb"],
             "red": pico["red"],
             "redes": pico["redes"],
+            "version": pico["version"],
+            "racha": pico["racha"],
+            "energia": pico["energia"],
+            "comida": pico["comida"],
+            "juego": pico["juego"],
         },
         pomodoro=leer_pomodoro(),
         logros=logros.resumen(),
@@ -449,10 +455,37 @@ def pico_estado():
         extra["red"] = a.get("red") or None
     if "redes" in a:
         extra["redes"] = [r for r in a.get("redes", "").split("|") if r]
+    for k in ("racha", "energia"):                       # v8: racha de estudio y energía de Wonder
+        if a.get(k, "").isdigit():
+            extra[k] = int(a[k])
+    if "comida" in a:
+        partes = (a.get("comida", "").split(",") + ["0", "0", "0"])[:3]
+        extra["comida"] = {n: int(v) if v.isdigit() else 0
+                           for n, v in zip(("mailo", "arepa", "changua"), partes)}
+    for k in ("juego", "version"):
+        if k in a:
+            extra[k] = a.get(k)[:20] or None
     _pico_visto(**extra)
     return jsonify(wonder=w["version"], emocion=w["emocion"],
                    hora=datetime.now(calendario.TIMEZONE).strftime("%H:%M"),
                    ahora=ahora_para_pico(), pomodoro=leer_pomodoro())
+
+
+@app.post("/pico/reinicio")
+def pico_reinicio():
+    """El llavero se restableció de fábrica: se guarda una COPIA de los logros y de
+    Mi Wonder (datos/copias/) y se empieza de cero. Nada se borra para siempre."""
+    copias = os.path.join(DATOS_DIR, "copias")
+    os.makedirs(copias, exist_ok=True)
+    marca = datetime.now().strftime("%Y%m%d_%H%M%S")
+    for ruta in (logros.ARCHIVO, WONDER_FILE):
+        if os.path.exists(ruta):
+            os.replace(ruta, os.path.join(copias, f"{marca}_{os.path.basename(ruta)}"))
+    with _candado:
+        for k in ("racha", "energia", "comida", "juego", "wonder_version"):
+            PICO[k] = None
+    print(f"[{datetime.now():%H:%M:%S}] El llavero se restablecio de fabrica (copia en datos/copias)")
+    return jsonify(ok=True)
 
 
 @app.get("/pico/wonder.raw")
@@ -479,22 +512,37 @@ def pico_audio():
 
 
 # ---------------------------------------------------------------
+def ips_locales():
+    """Todas las IP de este computador (WiFi, cable, hotspot del PC...)."""
+    ips = {ip_local()}
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            ips.add(info[4][0])
+    except OSError:
+        pass
+    return [ip for ip in ips if not ip.startswith("127.")]
+
+
 def _avisar_en_la_red():
-    """Cada 2 s grita 'WONDER-HUB http://IP:PUERTO' a toda la red local.
-    Asi el llavero encuentra el hub aunque el computador cambie de IP."""
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+    """Cada 2 s grita 'WONDER-HUB http://IP:PUERTO' en CADA red del computador
+    (con su propia IP en cada una). Asi el llavero encuentra el hub aunque el
+    computador cambie de IP o tenga varias redes (WiFi + hotspot, por ejemplo)."""
     while True:
-        try:
-            ip = ip_local()
+        for ip in ips_locales():
             mensaje = f"WONDER-HUB http://{ip}:{PUERTO}".encode()
-            for destino in ("255.255.255.255", ip.rsplit(".", 1)[0] + ".255"):
-                try:
-                    s.sendto(mensaje, (destino, PUERTO_AVISO))
-                except OSError:
-                    pass
-        except Exception:
-            pass
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            try:
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+                s.bind((ip, 0))                       # sale por ESA red
+                for destino in ("255.255.255.255", ip.rsplit(".", 1)[0] + ".255"):
+                    try:
+                        s.sendto(mensaje, (destino, PUERTO_AVISO))
+                    except OSError:
+                        pass
+            except OSError:
+                pass
+            finally:
+                s.close()
         time.sleep(2)
 
 

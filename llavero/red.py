@@ -229,6 +229,58 @@ def buscar_hub(segundos=2):
     return False
 
 
+def escanear_hub(puerto=None):
+    """Plan C (si el aviso UDP no llega, p. ej. por el firewall): prueba las direcciones
+    más comunes de esta red buscando el hub. Tarda unos segundos. True si lo encontró."""
+    if not wlan.isconnected():
+        return False
+    try:
+        ip, _mascara, puerta, _dns = wlan.ifconfig()
+    except Exception:
+        return False
+    if puerto is None:
+        puerto = 8000
+        for url in [r.get("servidor") for r in cfg["redes"]] + [cfg["servidor"]]:
+            try:
+                puerto = int(url.rsplit(":", 1)[1].split("/")[0])
+                break
+            except (AttributeError, IndexError, ValueError):
+                pass
+    base = ip.rsplit(".", 1)[0] + "."
+    finales = [1] + list(range(2, 21)) + list(range(100, 111)) + [137, 254]
+    candidatos = [puerta]
+    for n in finales:
+        c = base + str(n)
+        if c != ip and c not in candidatos:
+            candidatos.append(c)
+    for c in candidatos:
+        s = socket.socket()
+        s.settimeout(0.25)
+        try:
+            s.connect(socket.getaddrinfo(c, puerto)[0][-1])
+            abierto = True
+        except OSError:
+            abierto = False
+        finally:
+            s.close()
+        if not abierto:
+            continue
+        url = "http://%s:%d" % (c, puerto)
+        try:
+            r = requests.get(url + "/pico/estado", headers=_cabeceras(), timeout=3)
+            try:
+                ok = r.status_code == 200 and "ahora" in r.text
+            finally:
+                r.close()
+        except (OSError, ValueError):
+            ok = False
+        if ok:
+            print("Hub encontrado (escaneo) en", url)
+            _poner_servidor(url)
+            return True
+    return False
+
+
 def pedir(ruta, timeout=6, buscar=True):
     """GET al hub. Devuelve (codigo, datos_json o None). Si el hub no
     contesta, lo busca en la red y lo intenta una vez más."""

@@ -261,6 +261,38 @@ audio { width: 100%; }
 .opcion .recorte img { position: absolute; max-width: none; height: auto; object-fit: fill; }
 .opcion[aria-pressed="true"] { background: var(--tinta); color: var(--sobre-tinta); }
 
+/* ---------- v8: racha, energía, comida, Wonder ---------- */
+.energia { position: relative; height: 14px; border: var(--borde); border-radius: 8px; background: var(--campo); overflow: hidden; }
+.energia__lleno { height: 100%; background: linear-gradient(90deg, #ffd23c, #ffb000); transition: width .4s; }
+.energia__lleno--poca { background: #9aa9bd; }
+.energia__marca { position: absolute; top: -2px; bottom: -2px; left: 25%; width: 2px; background: var(--mal); }
+.comidas { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+.comida { position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px; text-align: center;
+  padding: 10px 8px; border: var(--borde); border-radius: 12px; background: var(--campo); }
+.comida img { width: 72px; height: 72px; object-fit: contain; }
+.comida__rareza { font: 700 11px/1 var(--texto); letter-spacing: .08em; text-transform: uppercase; padding: 3px 8px; border-radius: 99px; background: #e4e9f0; color: #3b4b68; }
+.comida--arepa .comida__rareza { background: #68b2ff; color: #fff; }
+.comida--changua .comida__rareza { background: #af5feb; color: #fff; }
+.comida--changua { box-shadow: 0 0 0 3px #af5feb33; }
+.comida__n { position: absolute; top: 8px; right: 10px; font: 700 15px/1 var(--texto); }
+.juego-mini { width: 40px; height: 40px; image-rendering: pixelated; border: var(--borde); border-radius: 8px; }
+.wonder-hero { display: grid; grid-template-columns: 1.6fr 1fr; gap: 12px; align-items: stretch; }
+.wonder-hero__datos { display: flex; flex-direction: column; justify-content: center; gap: 14px; padding: 14px;
+  border: var(--borde); border-radius: var(--radio); background: var(--panel); }
+.dato-grande { display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto; column-gap: 8px; align-items: center; }
+.dato-grande span { grid-row: 1 / 3; font-size: 26px; }
+.dato-grande b { font: 700 26px/1 var(--texto); }
+.dato-grande small { color: var(--tinta-suave); }
+.escenario__etiqueta { position: absolute; left: 10px; bottom: 10px; padding: 4px 10px; border-radius: 99px;
+  background: #0b0e14cc; color: #fff; font: 600 12px/1.2 var(--texto); }
+.opcion { transition: transform .12s, box-shadow .12s; }
+.opcion:hover { transform: translateY(-2px); box-shadow: 0 4px 0 var(--linea); }
+.opcion[aria-pressed="true"] { box-shadow: 0 0 0 3px #96d73c; }
+.opcion--bloqueada { cursor: default; opacity: .6; border-style: dashed; }
+.opcion--bloqueada:hover { transform: none; box-shadow: none; }
+.recorte--candado { display: grid; place-items: center; font-size: 28px; }
+@media (max-width: 560px) { .wonder-hero { grid-template-columns: 1fr; } }
+
 /* ---------- pestañas ---------- */
 .pestanas {
   position: fixed; left: 50%; bottom: 12px; transform: translateX(-50%);

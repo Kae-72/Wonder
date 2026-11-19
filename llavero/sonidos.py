@@ -29,7 +29,13 @@ PIN_LRC = 21          # tiene que ser BCLK + 1
 PIN_DIN = 22
 PIN_SD = 26           # encender / apagar el amplificador
 
-VOLUMEN = 35          # 0 a 100. Con parlante de 8 ohm 0.5 W no pasar de ~45.
+VOLUMEN = 80          # TOPE general 0 a 100. Con 8 ohm 0.5 W: 100 da ~0.2 W (seguro). Con GAIN a GND, máx. 80.
+
+# Volumen de cada tipo de sonido (0 a 100 % del tope). Se cambian en el menú Configuración.
+#   notif   = avisos que importan (clase por empezar, fin de pomodoro, ¡Hecho!, errores)
+#   efectos = botones, menús, juegos
+#   musica  = melodías (al prender y al dormir)
+VOL = {"notif": 100, "efectos": 100, "musica": 100}
 FREC_MUESTREO = 11025   # suficiente para sonidos de 8 bits y usa menos RAM
 MAX_MS = 1500           # el sonido más largo (melodías de dormir) dura ~1.4 s
 
@@ -51,13 +57,17 @@ _pos = 0
 _ocupado = False
 _CEROS = bytes(512)
 _BUF = bytearray(MAX_MS * FREC_MUESTREO // 1000 * 2)   # UN solo búfer, reservado al arrancar
-activo = True         # False = silencio total
+activo = True         # False = silencio total (Configuración -> Silenciar)
+bloqueado = False     # True = la protección cortó el parlante (hasta reiniciar o reactivarlo)
+_amp = False          # el amplificador está prendido ahora
+_t_amp = 0            # desde cuándo
+_silencios = 0        # trozos de silencio seguidos (para apagar el amplificador)
 TROZO = 512
 _COLA_SILENCIO = 20   # ms de silencio al final
 
 
 # ---------------- Sintetizador ----------------
-def _render(notas):
+def _render(notas, cat="efectos"):
     total_ms = min(MAX_MS, sum(n[1] for n in notas) + _COLA_SILENCIO)
     buf = _BUF
     limite = total_ms * FREC_MUESTREO // 1000
@@ -65,7 +75,7 @@ def _render(notas):
     for i in range(0, limite * 2, len(_CEROS)):          # borra lo anterior, por trozos
         k = min(len(_CEROS), limite * 2 - i)
         mv[i:i + k] = _CEROS[:k]
-    base = 9000 * VOLUMEN / 100
+    base = 9000 * VOLUMEN / 100 * VOL.get(cat, 100) / 100
     pack = struct.pack
     pos = 0
     lfsr = 0x7FFF
@@ -120,11 +130,12 @@ _t_cadena = 0
 
 
 def _alimentar(_arg):
-    # El amplificador queda SIEMPRE encendido y recibiendo datos (silencio cuando
-    # no hay sonido). Así cada sonido arranca al instante y no se pierde el comienzo.
+    # El I2S recibe datos SIEMPRE (silencio cuando no hay sonido): así cada sonido
+    # arranca al instante. Pero el AMPLIFICADOR solo se prende mientras suena algo
+    # (pin SD): si el Pico se llegara a colgar en silencio, el parlante queda mudo.
     # Cada trozo pide el siguiente: es una "cadena". Si el Pico está muy ocupado y se
     # pierde un eslabón, revisar() la vuelve a enganchar.
-    global _pos, _ocupado, _t_cadena
+    global _pos, _ocupado, _t_cadena, _silencios
     if _detenido or _audio is None:
         return
     _t_cadena = time.ticks_ms()
@@ -132,12 +143,82 @@ def _alimentar(_arg):
         if _buf is not None and _pos < len(_buf):
             trozo = _buf[_pos:_pos + TROZO]
             _pos += len(trozo)
+            _silencios = 0
             _audio.write(trozo)
         else:
             _ocupado = False
+            _silencios += 1
+            if _amp and _silencios > 6:          # ~0,3 s después de terminar: amplificador apagado
+                _amp_apagar()
             _audio.write(_SILENCIO)
     except Exception as e:
         print("Sonido (cadena):", e)
+
+
+# ---------------- Protección del parlante ----------------
+# El "grito": si el Pico se cuelga mientras suena algo, el I2S puede quedarse
+# repitiendo el último pedacito para siempre. Un vigilante revisa 4 veces por
+# segundo (con una interrupción de reloj, que funciona aunque el programa esté
+# trabado): si el amplificador lleva prendido demasiado tiempo o la cadena dejó de
+# avanzar, lo APAGA y deja el sonido bloqueado hasta reiniciar (o reactivarlo en
+# Configuración). El llavero muestra "Parlante silenciado".
+def _amp_prender():
+    global _amp, _t_amp
+    if bloqueado or _sd is None:
+        return
+    _t_amp = time.ticks_ms()
+    if not _amp:
+        _sd.value(1)
+        _amp = True
+
+
+def _amp_apagar():
+    global _amp
+    if _sd is not None:
+        _sd.value(0)
+    _amp = False
+
+
+def _vigilar(_t):
+    global bloqueado, _amp
+    if not _amp:
+        return
+    ahora = time.ticks_ms()
+    if time.ticks_diff(ahora, _t_cadena) > 900 or time.ticks_diff(ahora, _t_amp) > MAX_MS + 2000:
+        _sd.value(0)
+        _amp = False
+        bloqueado = True
+
+
+_vigilante = None
+
+
+def _poner_vigilante():
+    global _vigilante
+    if _vigilante is not None:
+        return
+    from machine import Timer
+    try:
+        _vigilante = Timer(period=250, mode=Timer.PERIODIC, callback=_vigilar, hard=True)
+    except (TypeError, ValueError):
+        _vigilante = Timer(period=250, mode=Timer.PERIODIC, callback=_vigilar)
+
+
+def desbloquear():
+    """Vuelve a permitir sonido después de que la protección lo cortó."""
+    global bloqueado
+    bloqueado = False
+
+
+def ajustar(vol=None, mudo=None):
+    """Aplica lo guardado en Configuración: vol = {"notif": 0-100, ...}, mudo = True/False."""
+    global activo
+    if vol:
+        for k in VOL:
+            if isinstance(vol.get(k), int):
+                VOL[k] = max(0, min(100, vol[k]))
+    if mudo is not None:
+        activo = not mudo
 
 
 def revisar():
@@ -149,23 +230,29 @@ def revisar():
 
 def iniciar():
     global _audio, _sd, _detenido
-    _sd = Pin(PIN_SD, Pin.OUT, value=1)           # amplificador encendido
+    _sd = Pin(PIN_SD, Pin.OUT, value=0)           # amplificador apagado hasta que suene algo
     _audio = I2S(0, sck=Pin(PIN_BCLK), ws=Pin(PIN_LRC), sd=Pin(PIN_DIN), mode=I2S.TX,
                  bits=16, format=I2S.MONO, rate=FREC_MUESTREO, ibuf=3072)
     _audio.irq(_alimentar)                        # modo sin bloqueo
     _detenido = False
     _alimentar(None)                              # arranca el flujo de silencio
+    _poner_vigilante()
 
 
 def apagar():
     """Apaga el amplificador (para ahorrar batería en reposo)."""
     global _detenido, _ocupado
-    global _audio, _buf
+    global _audio, _buf, _vigilante
     _detenido = True
+    if _vigilante is not None:        # el vigilante no hace falta dormido (y así no despierta al Pico)
+        try:
+            _vigilante.deinit()
+        except Exception:
+            pass
+        _vigilante = None
     _ocupado = False
     _buf = None
-    if _sd:
-        _sd.value(0)
+    _amp_apagar()
     if _audio is not None:            # se suelta el I2S: así nada queda corriendo al dormir
         try:
             _audio.deinit()
@@ -180,16 +267,18 @@ def reanudar():
         iniciar()
 
 
-def tocar(notas, clave=None):
-    """Toca una lista de notas. Interrumpe lo que esté sonando."""
+def tocar(notas, clave=None, cat="efectos"):
+    """Toca una lista de notas. Interrumpe lo que esté sonando.
+    cat = "notif", "efectos" o "musica" (cada uno con su volumen)."""
     global _buf, _pos, _ocupado
-    if _audio is None or not activo:
+    if _audio is None or not activo or bloqueado or VOL.get(cat, 100) <= 0:
         return
     _buf = None                      # mientras se prepara, el amplificador recibe silencio
-    n = _render(notas)
+    n = _render(notas, cat)
     _buf = memoryview(_BUF)[:n]
     _pos = 0
     _ocupado = True
+    _amp_prender()
     revisar()
 
 
@@ -243,7 +332,7 @@ def encender():
          (C6, 45, P25, .8, .7), (E6, 45, P25, .8, .7), (G6, 45, P25, .8, .7), (C7, 320, P25, .9, 0.0)],
         [(C6, 22, P12, .7, .7), (E6, 22, P12, .7, .7), (G6, 22, P12, .7, .7)] * 4 +
         [(A6, 120, P25, .8, .7), (0, 30), (C7, 300, P50, .9, 0.0)],
-    )))
+    )), cat="musica")
 
 
 def entrar():
@@ -305,13 +394,13 @@ def listo():
          (G6, 45, P50, .7, .6), (0, 25), (C7, 70, P25, .9, .8), (C7, 260, P12, .8, 0.0)],
         [(G5, 40, P25, .7, .6), (C6, 40, P25, .7, .6), (E6, 40, P25, .7, .6), (0, 20),
          (G6, 60, P50, .8, .7), (C7, 280, P50, .8, 0.0)],
-    )))
+    )), cat="notif")
 
 
 def error():
     """Algo falló: golpe de ruido y dos notas graves que caen."""
     tocar([(RUIDO, 40, P50, .7, .2), (E4, 110, P50, .8, .6, D4), (0, 35),
-           (C4, 260, P50, .8, 0.0, 200)], "error")
+           (C4, 260, P50, .8, 0.0, 200)], "error", cat="notif")
 
 
 def aviso():
@@ -322,7 +411,7 @@ def aviso():
             arpegio.append((f, 30, P25, .8, .7))
         arpegio.append((0, 60))
     arpegio.append((C7, 300, P50, .9, 0.0))
-    tocar(arpegio, "aviso")
+    tocar(arpegio, "aviso", cat="notif")
 
 
 def especial():
@@ -357,7 +446,7 @@ def hecho():
          (G6, 50, P25, .9, .8), (E6, 50, P25, .8, .7), (G6, 50, P25, .9, .8), (C7, 260, P12, .9, 0.0)],
         [(C6, 40, P25, .8, .7), (E6, 40, P25, .8, .7), (G6, 40, P25, .8, .7), (C7, 40, P25, .9, .8),
          (0, 30), (A6, 50, P50, .8, .7), (C7, 60, P50, .9, .8), (E7, 240, P12, .9, 0.0)],
-    )))
+    )), cat="notif")
 
 
 def melodia_dormir(momento="dia"):
@@ -393,11 +482,42 @@ def melodia_dormir(momento="dia"):
             [(E6, 70, P25, .7, .6), (G6, 70, P25, .7, .6), (C7, 70, P25, .8, .7), (0, 40),
              (D7, 90, P50, .7, .6), (C7, 90, P50, .7, .6), (A6, 90, P50, .7, .6), (G6, 320, P50, .7, 0.0)],
         )
-    tocar(_elegir("dormir_" + momento, opciones))
+    tocar(_elegir("dormir_" + momento, opciones), cat="musica")
+
+
+# ---------------- Sonidos nuevos (v8) ----------------
+def comida(rareza="basica"):
+    """Te tocó una comida. Básica: dos notas. Rara: arpegio. Nicho: fanfarria brillante."""
+    if rareza == "nicho":
+        notas = [(C6, 45, P12, .8, .7), (E6, 45, P12, .8, .7), (G6, 45, P12, .8, .7), (C7, 45, P12, .9, .8),
+                 (0, 30), (G6, 45, P25, .8, .7), (C7, 45, P25, .9, .8), (E7, 45, P25, .9, .8), (0, 30),
+                 (G7, 60, P12, .9, .8), (E7, 60, P12, .8, .7), (G7, 360, P50, .9, 0.0)]
+    elif rareza == "rara":
+        notas = [(G5, 50, P25, .8, .7), (C6, 50, P25, .8, .7), (E6, 50, P25, .8, .7), (0, 25),
+                 (G6, 60, P50, .8, .7), (C7, 300, P50, .8, 0.0)]
+    else:
+        notas = [(E6, 60, P50, .7, .6), (0, 20), (G6, 220, P50, .7, 0.0)]
+    tocar(notas, cat="notif")
+
+
+def comer():
+    """Wonder come: tres mordiscos (ruido corto) y un 'mmm' que sube."""
+    tocar([(RUIDO, 30, P50, .6, 0.0), (0, 60), (RUIDO, 30, P50, .6, 0.0), (0, 60),
+           (RUIDO, 30, P50, .6, 0.0), (0, 80), (E5, 120, P50, .6, .5, G5), (C6, 200, P50, .6, 0.0)])
+
+
+def racha_perdida():
+    """Se perdió la racha: tres notas que bajan despacio."""
+    tocar([(G5, 160, P50, .6, .5), (E5, 160, P50, .6, .5), (C5, 420, P50, .6, 0.0, G4)], cat="notif")
+
+
+def pitido(ms=100):
+    """El "buzzer" de los juegos CHIP-8: un tono cuadrado simple."""
+    tocar([(A5, max(20, min(ms, 1200)), P50, .6, .6)])
 
 
 TODOS = ("encender", "entrar", "mover", "tic", "seleccionar", "volver", "listo", "error", "aviso", "especial", "guardar",
-         "dormir", "despertar", "hecho")
+         "dormir", "despertar", "hecho", "comida", "comer", "racha_perdida", "pitido")
 
 
 def demo():

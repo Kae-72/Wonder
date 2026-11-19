@@ -13,10 +13,17 @@
 #   Pomodoro:    O = empezar / pausar,  IZQ / DER = minutos (antes de empezar)
 #                en pausa: IZQ = terminar.  Mantener O = volver (el pomodoro sigue)
 #   Grabadora:   O = grabar / parar,  DER = subir grabaciones,  mantener O = volver
-#   Wonder:      IZQ / DER = elegir accesorio,  O = poner / quitar,  mantener O = volver
+#   Wonder:      IZQ / DER = elegir (comidas, accesorios, racha),  O = dar / poner / quitar,
+#                mantener O = volver
+#   Juegos:      O = jugar (desde 25 % de energía),  IZQ / DER = ver los otros juegos,
+#                dentro del juego: mantener IZQ + DER 1 s = salir
+#   Configuración: IZQ / DER = elegir,  O = cambiar,  mantener O = volver
+#   En cualquier pantalla: mantener IZQ + DER 2,5 s = APAGAR (pantalla, WiFi y parlante).
+#                          Para prender: mantener O 2 s (vuelve a la pantalla de inicio).
 #
 # Archivos en el Pico: los .raw y .spr de las pantallas, sonidos.py, red.py,
-# bateria.py, grabadora.py, rapido.py, sdcard.py.
+# bateria.py, grabadora.py, rapido.py, sdcard.py, juegos.py, chip8.py, ajustes.py,
+# ota.py, version.txt y los juegos juego_*.ch8.
 # config.json (redes WiFi + hub) lo escribe la app; NO hay que tocarlo a mano.
 
 from machine import Pin, SPI
@@ -47,7 +54,10 @@ FPS_INICIO = 3
 LARGO_MS = 700              # cuánto mantener O para "volver"
 POMODORO = {"estudio": 25, "descanso": 5, "sesiones": 4}   # la app puede cambiarlo
 
-APPS = [("calendario", "Calendario"), ("pomodoro", "Pomodoro"), ("grabadora", "Grabadora"), ("wonder", "Wonder")]
+APPS = [("calendario", "Calendario"), ("pomodoro", "Pomodoro"), ("grabadora", "Grabadora"),
+        ("wonder", "Wonder"), ("juegos", "Juegos"), ("ajustes", "Configuracion")]
+GUARDAR_HORA_MIN = 30       # cada cuánto se guarda la hora (por si el Pico se reinicia)
+NTP_CADA_H = 6              # cada cuánto se corrige la hora con internet (si no hay hub)
 BURBUJA_CENTRO = (39, 17)
 ICONO_SEL = (114, 62)
 ICONO_IZQ = (75, 62)
@@ -55,8 +65,18 @@ ICONO_DER = (151, 62)
 TEXTO_INICIO_Y = 9
 # ===================================================
 
+try:
+    with open("version.txt") as _f:
+        VERSION = _f.read().strip()
+except OSError:
+    VERSION = "8.0"
+
 W, H = 160, 128
 TAM_PANTALLA = W * H * 2
+
+
+class VolverInicio(Exception):
+    """Después de un apagado con IZQ + DER: se vuelve a la pantalla "Pulsa O"."""
 CLAVE_FB = 0x1FF8
 
 # ---------------- Pantalla ----------------
@@ -275,13 +295,48 @@ def sonar(nombre, *args):
 #  BARRA DE ARRIBA (hora · pomodoro · WiFi · batería) y tareas de fondo
 # ======================================================================
 BAT = {"pct": None, "usb": False}
-T = {"red": 0, "bat": None, "sync": None, "ev": 0, "sync_ok": True}
+T = {"red": 0, "bat": None, "sync": None, "ev": 0, "sync_ok": True, "hora_guardada": 0,
+     "ntp": None, "racha": 0, "aviso_mudo": False}
 OCUPADO = False              # True mientras graba: no sincroniza (no interrumpir)
 _barra_dibujada = None
 
 
+# ---------------- Reloj ----------------
+# El reloj del Pico sigue andando dormido (no gasta más). Solo se pierde si el Pico
+# se REINICIA (al conectarlo a Thonny, si se cuelga o si se acaba la batería).
+# Por eso: la hora se pone sola con el hub o con internet, se guarda cada 30 min en
+# hora.json, y si un día arranca sin hora NO supone que es de día: usa el último
+# momento (día / tarde / noche) que conoció.
+ARCH_HORA = "hora.json"
+RELOJ = {"mom": None}
+try:
+    with open(ARCH_HORA) as _f:
+        RELOJ.update(json.load(_f))
+except (OSError, ValueError):
+    pass
+
+
 def hora_ok():
     return time.localtime()[0] >= 2025
+
+
+def guardar_hora():
+    if not hora_ok():
+        return
+    RELOJ["mom"] = momento()
+    RELOJ["t"] = time.time()
+    try:
+        with open(ARCH_HORA, "w") as f:
+            json.dump(RELOJ, f)
+    except OSError:
+        pass
+
+
+def hora_puesta():
+    """Llamar cada vez que la hora llega del hub o de internet."""
+    T["ntp"] = time.ticks_ms()
+    revisar_racha()
+    guardar_hora()
 
 
 def texto_hora():
@@ -292,11 +347,43 @@ def texto_hora():
 def firma_barra():
     return (texto_hora(), BAT["pct"], BAT["usb"], red.conectado(),
             pomo_estado() if pomo_estado() != "parado" else None,
-            pomo_resta_s() // 60 if pomo_estado() != "parado" else None)
+            pomo_resta_s() // 60 if pomo_estado() != "parado" else None,
+            EST_W.get("racha", 0), silenciado())
 
 
 def barra_cambio():
     return BARRA and firma_barra() != _barra_dibujada
+
+
+def silenciado():
+    return bool(sonidos) and (not sonidos.activo or sonidos.bloqueado)
+
+
+FUEGO = ((3, 0), (2, 1), (3, 1), (2, 2), (3, 2), (4, 2), (1, 3), (2, 3), (3, 3), (4, 3), (5, 3),
+         (1, 4), (2, 4), (4, 4), (5, 4), (1, 5), (2, 5), (4, 5), (5, 5), (2, 6), (3, 6), (4, 6))
+FUEGO_DENTRO = ((3, 4), (3, 5))
+
+
+def fuego(x, y):
+    """Fueguito de la racha (7x7)."""
+    for px, py in FUEGO:
+        fb.pixel(x + px, y + py, ROJO)
+    for px, py in FUEGO_DENTRO:
+        fb.pixel(x + px, y + py, AMARILLO)
+
+
+def parlante(x, y, mudo):
+    """Parlante de 7x7: con ondas si suena, con una X roja si está silenciado."""
+    for px, py in ((0, 2), (0, 3), (0, 4), (1, 2), (1, 3), (1, 4), (2, 1), (2, 2), (2, 3), (2, 4), (2, 5),
+                   (3, 0), (3, 1), (3, 2), (3, 3), (3, 4), (3, 5), (3, 6)):
+        fb.pixel(x + px, y + py, BLANCO)
+    if mudo:
+        for k in range(3):
+            fb.pixel(x + 4 + k, y + 2 + k, ROJO)
+            fb.pixel(x + 6 - k, y + 2 + k, ROJO)
+    else:
+        for px, py in ((5, 2), (5, 3), (5, 4), (6, 1), (6, 5)):
+            fb.pixel(x + px, y + py, BLANCO)
 
 
 def dibujar_barra():
@@ -319,6 +406,7 @@ def dibujar_barra():
     # hora
     h = texto_hora()
     x -= ancho_chico(h) + 5
+    fb.fill_rect(x - 1, 2, ancho_chico(h) + 2, 7, NAVY)
     chico(h, x, 3)
     # WiFi: tres rayitas
     if red.conectado():
@@ -327,6 +415,18 @@ def dibujar_barra():
         fb.fill_rect(x, 7, 1, 2, BLANCO)
         fb.fill_rect(x + 2, 5, 1, 4, BLANCO)
         fb.fill_rect(x + 4, 3, 1, 6, BLANCO)
+    # parlante (con X si está silenciado)
+    x -= 9
+    fb.fill_rect(x - 1, 1, 9, 9, NAVY)
+    parlante(x, 2, silenciado())
+    # racha de estudio: fueguito + días
+    racha = EST_W.get("racha", 0)
+    if racha:
+        n = "%d" % racha
+        x -= ancho_chico(n) + 11
+        fb.fill_rect(x - 1, 1, ancho_chico(n) + 11, 9, NAVY)
+        fuego(x, 2)
+        chico(n, x + 9, 3, AMARILLO)
     # pomodoro corriendo: punto rojo + minutos
     if pomo_estado() != "parado":
         m = "%d" % (pomo_resta_s() // 60)
@@ -337,9 +437,10 @@ def dibujar_barra():
 
 
 def momento():
-    """'dia' (6-17 h), 'tarde' (17-19 h) o 'noche' (19-6 h). Sin hora: 'dia'."""
+    """'dia' (6-17 h), 'tarde' (17-19 h) o 'noche' (19-6 h).
+    Sin hora: el último momento que se conoció (no supone que es de día)."""
     if not hora_ok():
-        return "dia"
+        return RELOJ.get("mom") or "dia"
     h = time.localtime()[3]
     return "dia" if 6 <= h < 17 else "tarde" if 17 <= h < 19 else "noche"
 
@@ -370,6 +471,23 @@ def tick():
         leer_bateria()
     if sonidos:
         sonidos.revisar()                        # que el sonido nunca se quede "mudo"
+        if sonidos.bloqueado and not T["aviso_mudo"]:
+            T["aviso_mudo"] = True               # la protección cortó el parlante: avisar una vez
+            mensaje("Parlante silenciado", "por seguridad")
+            time.sleep(2)
+            redibujar = True
+    if b_izq.p.value() == 0 and b_der.p.value() == 0 and not OCUPADO:
+        if T.get("combo") is None:
+            T["combo"] = ahora
+        elif time.ticks_diff(ahora, T["combo"]) > 2500:   # IZQ + DER 2,5 s = apagar
+            T["combo"] = None
+            mensaje("Apagando...", "Mantener O = prender")
+            esperar_soltar()
+            time.sleep_ms(600)
+            dormir(apagado=True)
+            raise VolverInicio()
+    else:
+        T["combo"] = None
     if pomo_tick():
         redibujar = True
     espera = REFRESCO_SEG * 1000 * (1 if T["sync_ok"] else 3)   # si falló, reintenta más tarde
@@ -381,7 +499,20 @@ def tick():
         T["sync_ok"] = sincronizar()
         gc.collect()
         redibujar = True
-    if (not BAT["usb"] and BAT["pct"] is not None and pomo_estado() == "parado" and not OCUPADO
+    if (red.conectado() and not OCUPADO and not T["sync_ok"]
+            and (T["ntp"] is None or time.ticks_diff(ahora, T["ntp"]) > NTP_CADA_H * 3600000)):
+        T["ntp"] = ahora                         # sin hub: la hora de internet, cada pocas horas
+        if red.hora_de_internet():
+            hora_puesta()
+            redibujar = True
+    if time.ticks_diff(ahora, T["hora_guardada"]) > GUARDAR_HORA_MIN * 60000:
+        T["hora_guardada"] = ahora
+        guardar_hora()
+    if not OCUPADO and time.ticks_diff(ahora, T["racha"]) > 60000:
+        T["racha"] = ahora                       # cada minuto: ¿cambió el día? ¿se perdió la racha?
+        if revisar_racha():
+            redibujar = True
+    if (not BAT["usb"] and pomo_estado() == "parado" and not OCUPADO
             and time.ticks_diff(ahora, ACT["t"]) > APAGAR_MIN * 60000):
         dormir()
         return True
@@ -389,6 +520,9 @@ def tick():
         T["ev"] = ahora
         if revisar_eventos():
             redibujar = True
+    if PEND and not OCUPADO:
+        mostrar_pendientes()                     # comida nueva, racha perdida...
+        redibujar = True
     return redibujar or barra_cambio()
 
 
@@ -415,17 +549,22 @@ def sincronizar():
     cómo está el llavero (batería y redes) para que la app lo muestre."""
     global datos_cal, t_datos
     tengo = version_wonder()
-    q = "/pico/estado?v=%s&bat=%s&usb=%d&red=%s&redes=%s" % (
+    com = EST_W.get("comida", {})
+    q = ("/pico/estado?v=%s&bat=%s&usb=%d&red=%s&redes=%s&racha=%d&energia=%d&comida=%d,%d,%d"
+         "&juego=%s&version=%s") % (
         tengo, "" if BAT["pct"] is None else BAT["pct"], 1 if BAT["usb"] else 0,
-        red.citar(red.red_actual or ""), red.citar("|".join(red.nombres())))
+        red.citar(red.red_actual or ""), red.citar("|".join(red.nombres())),
+        EST_W.get("racha", 0), EST_W.get("energia", 0),
+        com.get("mailo", 0), com.get("arepa", 0), com.get("changua", 0),
+        EST_W.get("juego", ""), red.citar(VERSION))
     codigo, d = red.pedir(q, timeout=3)
     if codigo != 200 or not d:
         print("Sin hub (", codigo, ")")
-        if not hora_ok():
-            red.hora_de_internet()
+        if not hora_ok() and red.hora_de_internet():
+            hora_puesta()
         return False
-    if d.get("ahora"):
-        red.poner_hora(d["ahora"])
+    if d.get("ahora") and red.poner_hora(d["ahora"]):
+        hora_puesta()
     p = d.get("pomodoro")
     if p and pomo_estado() == "parado":
         for k in POMODORO:
@@ -454,8 +593,8 @@ def sincronizar():
             LOGROS["fecha"] = hoy_str()
         datos_cal = d
         t_datos = time.ticks_ms()
-        if d.get("ahora"):
-            red.poner_hora(d["ahora"])
+        if d.get("ahora") and red.poner_hora(d["ahora"]):
+            hora_puesta()
         try:
             with open("cal.json", "w") as f:
                 json.dump(d, f)
@@ -578,11 +717,13 @@ def marcar_hecho(ev):
 # ======================================================================
 #  DORMIR (ahorro de batería)
 # ======================================================================
-def dormir():
+def dormir(apagado=False):
     """Apaga pantalla, WiFi y parlante. Despierta con cualquier botón o
-    cuando una clase está por empezar."""
+    cuando una clase está por empezar.
+    apagado=True ("apagar" a mano): solo despierta manteniendo O 2 segundos."""
     import machine
-    print("Durmiendo...")
+    print("Apagando..." if apagado else "Durmiendo...")
+    guardar_hora()
     # despedida: Wonder descansando según la hora + una melodía corta
     global BARRA
     antes = BARRA
@@ -607,10 +748,19 @@ def dormir():
     por_evento = False
     t_revision = time.ticks_ms()
     botones = (b_izq.p, b_o.p, b_der.p)
+    t_o = None
     while True:
-        if any(p.value() == 0 for p in botones):
+        if apagado:
+            if b_o.p.value() == 0:                  # mantener O 2 s para prender
+                if t_o is None:
+                    t_o = time.ticks_ms()
+                elif time.ticks_diff(time.ticks_ms(), t_o) > 2000:
+                    break
+            else:
+                t_o = None
+        elif any(p.value() == 0 for p in botones):
             break
-        if time.ticks_diff(time.ticks_ms(), t_revision) > 30000:
+        if not apagado and time.ticks_diff(time.ticks_ms(), t_revision) > 30000:
             t_revision = time.ticks_ms()
             if proximo_evento():
                 por_evento = True
@@ -743,7 +893,7 @@ def pomo_tick():
         return False
     ahora = time.ticks_ms()
     if POMO["fase"] == "estudio":
-        sumar_estudio(POMODORO["estudio"])            # para el ánimo de Wonder
+        PEND.append(("sesion", registrar_sesion()))    # racha y comida (se muestra enseguida)
         if POMO["sesion"] >= POMODORO["sesiones"]:
             pomo_terminar()
             sonar("listo")
@@ -772,6 +922,10 @@ def dibujar_pomodoro():
     else:
         texto_borde("O seguir", 3, 3)
         texto_borde("IZQ terminar", 3, 14)
+    racha = EST_W.get("racha", 0)                      # la racha, también aquí
+    fb.fill_rect(2, 25, 11, 9, NAVY)
+    fuego(4, 26)
+    texto_borde(("%d dia" if racha == 1 else "%d dias") % racha, 15, 26, AMARILLO)
     # panel con el tiempo
     x, y, w, h = 3, 78, 74, 46
     panel(x, y, w, h)
@@ -839,24 +993,47 @@ def pantalla_pomodoro():
 
 
 # ======================================================================
-#  WONDER: ánimo e inventario
-#  El ánimo sale de cosas que no se pueden falsear desde el llavero:
-#  ¡Hecho! confirmados por el hub, racha de días, minutos de pomodoro
-#  terminados, y tareas o clases que se pasaron sin marcar.
+#  WONDER: racha, comida, energía, ánimo e inventario
+#
+#  RACHA: días de semana (lunes a viernes) seguidos con al menos un pomodoro
+#  terminado (cualquiera, hasta el más corto). Sábado y domingo NO cuentan ni la
+#  rompen; estudiar ese día no suma nada.
+#  COMIDA: desde 2 días de racha, cada pomodoro te da una comida al azar que se
+#  guarda. Tú decides cuándo dársela a Wonder:
+#      Básica  Mailo    +20 % energía  (sale 60 de cada 100 veces)
+#      Rara    Arepa    +27 %          (30 de 100)
+#      Nicho   Changua  +35 %          (10 de 100)
+#  ENERGÍA: solo sube comiendo y NUNCA baja sola. Para jugar hace falta 25 %.
+#  Si pierdes la racha (de 2 días o más), el juego del menú cambia al azar.
+#  El ÁNIMO sale de la energía, los ¡Hecho!, la racha y lo que se pasó sin marcar.
 # ======================================================================
 ARCH_WONDER = "wonder_estado.json"
-META_ESTUDIO_MIN = 100                      # minutos de pomodoro al día para llenar "estudio"
+MORADO = color(175, 95, 235)
+# (id, nombre, rareza, energía, probabilidad de 100)
+COMIDAS = (("mailo", "Mailo", "basica", 20, 60), ("arepa", "Arepa", "rara", 27, 30),
+           ("changua", "Changua", "nicho", 35, 10))
+RAREZAS = {"basica": ("BASICA", BLANCO), "rara": ("RARA", AZUL), "nicho": ("NICHO", MORADO)}
+# (id, nombre). Los detalles de cada juego están en juegos.py.
+JUEGOS = (("br8kout", "Br8kout"), ("flightrunner", "Flight Runner"), ("piper", "Piper"),
+          ("sweetcopter", "Sw8 Copter"))
+ENERGIA_JUGAR = 25
+ENERGIA_CAMBIAR = 50
 # (id, nombre, ¡Hecho! necesarios para desbloquear). Los "???" esperan sus sprites.
 COSMETICOS = (("gafas", "Gafas", 0), ("bufanda", "Bufanda", 0), ("nuevo1", "???", 10),
               ("nuevo2", "???", 25), ("nuevo3", "???", 50))
 POS_CAPA = {"wonder_base": (54, 10), "wonder_feliz": (54, 10), "wonder_triste": (55, 22),
             "wonder_enojado": (54, 10), "acc_gafas": (62, 58), "acc_bufanda": (74, 78)}
-EST_W = {"puestos": ["gafas"], "fecha": "", "min_estudio": 0, "visita": ""}
+EST_W = {"puestos": ["gafas"], "visita": "", "racha": 0, "ult_dia": "", "energia": 0,
+         "comida": {"mailo": 0, "arepa": 0, "changua": 0}, "juego": "", "sin_fecha": 0,
+         "vio_racha": False}
 try:
     with open(ARCH_WONDER) as f:
         EST_W.update(json.load(f))
 except (OSError, ValueError):
     pass
+for _k in ("fecha", "min_estudio"):          # lo de la v7 (barra de estudio) ya no se usa
+    EST_W.pop(_k, None)
+PEND = []                                    # avisos por mostrar: comida nueva, racha perdida...
 
 
 def guardar_wonder():
@@ -867,15 +1044,168 @@ def guardar_wonder():
         pass
 
 
-def _dia_wonder():
-    if hora_ok() and EST_W["fecha"] != hoy_str():
-        EST_W.update(fecha=hoy_str(), min_estudio=0)
+def _azar(n):
+    import random
+    return random.getrandbits(16) % n
 
 
-def sumar_estudio(minutos):
-    _dia_wonder()
-    EST_W["min_estudio"] += minutos
+def juego_actual():
+    ids = [j[0] for j in JUEGOS]
+    if EST_W.get("juego") not in ids:
+        EST_W["juego"] = ids[_azar(len(ids))]
+        guardar_wonder()
+    return EST_W["juego"]
+
+
+def nombre_juego(ident):
+    for j, n in JUEGOS:
+        if j == ident:
+            return n
+    return ident
+
+
+def cambiar_juego(nuevo=None):
+    """Pone otro juego en el menú (al azar si no se dice cuál)."""
+    actual = juego_actual()
+    if nuevo is None:
+        otros = [j[0] for j in JUEGOS if j[0] != actual]
+        nuevo = otros[_azar(len(otros))]
+    EST_W["juego"] = nuevo
     guardar_wonder()
+    recargar_icono_juegos()
+    return nuevo
+
+
+def _fecha(t):
+    return "%04d-%02d-%02d" % time.localtime(t)[:3]
+
+
+def dia_habil_anterior():
+    """El último día de semana (lunes a viernes) ANTES de hoy, como 'AAAA-MM-DD'."""
+    t = time.time() - 86400
+    while time.localtime(t)[6] >= 5:          # 5 = sábado, 6 = domingo
+        t -= 86400
+    return _fecha(t)
+
+
+def es_finde():
+    return hora_ok() and time.localtime()[6] >= 5
+
+
+def sortear_comida():
+    r = _azar(100)
+    for ident, _, _, _, prob in COMIDAS:
+        if r < prob:
+            return ident
+        r -= prob
+    return COMIDAS[0][0]
+
+
+def datos_comida(ident):
+    for c in COMIDAS:
+        if c[0] == ident:
+            return c
+    return COMIDAS[0]
+
+
+def registrar_sesion():
+    """Un pomodoro de estudio terminó. Devuelve la comida ganada, "finde", "sin_hora" o None."""
+    if not hora_ok():
+        EST_W["sin_fecha"] = EST_W.get("sin_fecha", 0) + 1     # cuenta para hoy cuando vuelva la hora
+        guardar_wonder()
+        return "sin_hora"
+    if es_finde():
+        return "finde"
+    revisar_racha()                            # por si se perdió y aún no se había revisado
+    hoy = hoy_str()
+    if EST_W["ult_dia"] != hoy:
+        if EST_W["ult_dia"] and EST_W["ult_dia"] >= dia_habil_anterior():
+            EST_W["racha"] += 1
+        else:
+            EST_W["racha"] = 1
+        EST_W["ult_dia"] = hoy
+    premio = None
+    if EST_W["racha"] >= 2:
+        premio = sortear_comida()
+        EST_W["comida"][premio] = EST_W["comida"].get(premio, 0) + 1
+    guardar_wonder()
+    return premio
+
+
+def revisar_racha():
+    """Con la hora puesta: suma las sesiones que terminaron sin hora y revisa si se
+    perdió la racha (un día de semana sin estudiar). True si cambió algo."""
+    if not hora_ok():
+        return False
+    cambio = False
+    n = EST_W.get("sin_fecha", 0)
+    if n:
+        EST_W["sin_fecha"] = 0
+        for _ in range(n):
+            PEND.append(("sesion", registrar_sesion()))
+        cambio = True
+    r = EST_W.get("racha", 0)
+    if r and EST_W["ult_dia"] < dia_habil_anterior():
+        EST_W["racha"] = 0
+        if r >= 2:
+            PEND.append(("racha_perdida", cambiar_juego()))
+        guardar_wonder()
+        cambio = True
+    return cambio
+
+
+def mostrar_pendientes():
+    """Muestra los avisos guardados en PEND (comida nueva, fin de semana, racha perdida)."""
+    while PEND:
+        tipo, dato = PEND.pop(0)
+        if tipo == "sesion":
+            if dato == "finde":
+                sonar("listo")
+                mensaje("Fin de semana :)", "No suma a la racha")
+                esperar_boton(2500)
+            elif dato == "sin_hora":
+                sonar("listo")
+                mensaje("Pomodoro listo!", "Cuenta con la hora")
+                esperar_boton(2000)
+            elif dato:
+                pantalla_comida_nueva(dato)
+        elif tipo == "racha_perdida":
+            sonar("racha_perdida")
+            mensaje("Perdiste la racha", "Juego: " + nombre_juego(dato))
+            esperar_boton(3500)
+
+
+def esperar_boton(ms):
+    fin = time.ticks_add(time.ticks_ms(), ms)
+    while time.ticks_diff(fin, time.ticks_ms()) > 0:
+        if "presion" in (b_o.leer(), b_izq.leer(), b_der.leer()):
+            break
+        time.sleep_ms(20)
+    esperar_soltar()
+    ACT["t"] = time.ticks_ms()
+
+
+def pantalla_comida_nueva(ident):
+    _, nombre, rareza, energia, _ = datos_comida(ident)
+    titulo, c = RAREZAS[rareza]
+    fb.fill(NAVY)
+    panel(8, 8, W - 16, H - 16)
+    fb.fill_rect(9, 9, W - 18, 13, c if rareza != "basica" else GRIS)
+    t = "Comida " + titulo + "!"
+    fb.text(t, (W - len(t) * 8) // 2, 12, BLANCO)
+    spr = cargar_spr("comida_%s.spr" % ident)
+    if spr:
+        pegar(spr, W // 2, 52)
+    else:
+        fb.fill_rect(W // 2 - 20, 32, 40, 40, c)
+    texto_centro(nombre, 82, NAVY)
+    texto_centro("+%d%% energia" % energia, 94, VERDE)
+    texto_centro("Dasela en Wonder", 106, GRIS)
+    mostrar()
+    sonar("comida", rareza)
+    esperar_boton(4000)
+    del spr
+    gc.collect()
 
 
 def hechos_hoy():
@@ -893,22 +1223,13 @@ def vencidos():
                if ev.get("fin") and ayer <= ev["fin"] <= ahora and not es_hecho(ev))
 
 
-ENERGIA_HORA = (10, 8, 5, 5, 10, 30, 60, 75, 85, 90, 95, 100, 95, 90, 85, 80, 75, 70, 65, 55, 45, 35, 25, 15)
-
-
 def medidores():
-    """(ánimo, energía, estudio, vencidos), cada medidor de 0 a 100."""
-    _dia_wonder()
+    """(ánimo, energía, vencidos). Ánimo y energía de 0 a 100."""
     venc = vencidos()
-    animo = (55 + 12 * min(hechos_hoy(), 3) + 2 * min(LOGROS.get("racha", 0), 5)
-             + min(EST_W["min_estudio"], 100) // 10 - 15 * min(venc, 3)
-             + (5 if EST_W["visita"] == hoy_str() else 0))
-    energia = ENERGIA_HORA[time.localtime()[3]] if hora_ok() else 70
-    if BAT["pct"] is not None:
-        energia = (energia * 7 + BAT["pct"] * 3) // 10          # con poca batería, Wonder se cansa
-    estudio = EST_W["min_estudio"] * 100 // META_ESTUDIO_MIN
-    lim = lambda v: max(0, min(100, v))
-    return lim(animo), lim(energia), lim(estudio), venc
+    energia = max(0, min(100, EST_W.get("energia", 0)))
+    animo = (45 + energia * 30 // 100 + 10 * min(hechos_hoy(), 3) + 3 * min(EST_W.get("racha", 0), 5)
+             - 15 * min(venc, 3) + (5 if EST_W["visita"] == hoy_str() else 0))
+    return max(0, min(100, animo)), energia, venc
 
 
 def emocion(animo, venc):
@@ -930,13 +1251,14 @@ FRASES = {
 
 
 def frase(emo, energia):
-    import random
     if BAT["pct"] is not None and BAT["pct"] < 15:
         return "Cargame|porfa"
-    if energia < 25 and emo != "enojado":
-        return "Zzz... ya es|tarde"
+    if es_finde() and _azar(3) == 0:
+        return "Finde: la racha|descansa :)"
+    if energia < ENERGIA_JUGAR and emo != "enojado":
+        return ("Tengo hambre...", "Un pomodoro y|me das comida?")[_azar(2)]
     opciones = FRASES[emo]
-    return opciones[random.getrandbits(8) % len(opciones)]
+    return opciones[_azar(len(opciones))]
 
 
 _spr_cache = {}
@@ -944,7 +1266,7 @@ _spr_cache = {}
 
 def capa(nombre):
     if nombre not in _spr_cache:
-        if len(_spr_cache) > 4:
+        if len(_spr_cache) > 5:
             _spr_cache.clear()
             gc.collect()
         _spr_cache[nombre] = cargar_spr(nombre + ".spr")
@@ -961,16 +1283,19 @@ def pegar_capa(nombre):
 def icono_medidor(tipo, x, y, c):
     figuras = {"animo": ((1, 0), (2, 0), (4, 0), (5, 0), (0, 1), (3, 1), (6, 1), (0, 2), (6, 2),
                          (1, 3), (5, 3), (2, 4), (4, 4), (3, 5)),
-               "energia": ((3, 0), (2, 1), (1, 2), (2, 2), (3, 2), (4, 2), (3, 3), (2, 4), (1, 5)),
-               "estudio": ((0, 0), (1, 0), (2, 0), (4, 0), (5, 0), (6, 0), (0, 1), (3, 1), (6, 1),
-                           (0, 2), (3, 2), (6, 2), (0, 3), (3, 3), (6, 3), (0, 4), (1, 4), (2, 4),
-                           (4, 4), (5, 4), (6, 4))}
+               "energia": ((3, 0), (2, 1), (1, 2), (2, 2), (3, 2), (4, 2), (3, 3), (2, 4), (1, 5))}
     for px, py in figuras[tipo]:
         fb.pixel(x + px, y + py, c)
 
 
-def dibujar_wonder(sel, texto):
-    animo, energia, estudio, venc = medidores()
+def items_wonder():
+    """Lo que se elige abajo con IZQ / DER: comidas, accesorios y la ayuda de la racha."""
+    return ([("comida", c[0]) for c in COMIDAS] + [("acc", k) for k in range(len(COSMETICOS))]
+            + [("racha", None)])
+
+
+def dibujar_wonder(sel, texto, comiendo=None):
+    animo, energia, venc = medidores()
     emo = emocion(animo, venc)
     poner_fondo("fondo_inventario.raw", CLARO)
     pegar_capa("wonder_" + emo)
@@ -980,36 +1305,104 @@ def dibujar_wonder(sel, texto):
     for k, linea in enumerate(texto.split("|")):
         texto_borde(linea, 3, 16 + k * 10, AMARILLO)
     x, y = 111, 16
-    panel(x, y, 47, 36)
-    for k, (tipo, v, c) in enumerate((("animo", animo, ROJO), ("energia", energia, AMARILLO),
-                                     ("estudio", estudio, AZUL))):
+    panel(x, y, 47, 34)
+    for k, (tipo, v) in enumerate((("animo", animo), ("energia", energia))):
         yy = y + 4 + k * 10
-        icono_medidor(tipo, x + 3, yy, NAVY if tipo != "animo" else ROJO)
+        icono_medidor(tipo, x + 3, yy, ROJO if tipo == "animo" else NAVY)
         fb.rect(x + 12, yy, 32, 6, NAVY)
-        relleno = VERDE if v >= 60 else AMARILLO if v >= 30 else ROJO
-        fb.fill_rect(x + 13, yy + 1, 30 * v // 100, 4, relleno if tipo == "animo" else c)
-    ident, nombre, necesita = COSMETICOS[sel]
-    bloqueado = LOGROS.get("total", 0) < necesita
+        if tipo == "animo":
+            relleno = VERDE if v >= 60 else AMARILLO if v >= 30 else ROJO
+        else:
+            relleno = AMARILLO if v >= ENERGIA_JUGAR else GRIS
+        fb.fill_rect(x + 13, yy + 1, 30 * v // 100, 4, relleno)
+    fuego(x + 3, y + 24)
+    chico("%d" % EST_W.get("racha", 0), x + 13, y + 25, NAVY, None)
+    chico("%d%%" % energia, x + 44 - ancho_chico("%d%%" % energia), y + 25, GRIS, None)
+    if comiendo:
+        pegar(capa("comida_" + comiendo), 134, 80)
+    tipo, dato = items_wonder()[sel]
     panel(2, 108, 156, 18)
     fb.text("<", 5, 113, GRIS)
     fb.text(">", 147, 113, GRIS)
-    if bloqueado:
-        fb.text(nombre, 16, 113, GRIS)
-        fb.text("%d Hecho!" % necesita, 72, 113, GRIS)
+    if tipo == "comida":
+        ident, nombre, rareza, _, _ = datos_comida(dato)
+        n = EST_W["comida"].get(ident, 0)
+        mini = capa("comida_%s_mini" % ident)
+        if mini:
+            fb.blit(mini[0], 15, 117 - mini[2] // 2, CLAVE_FB)
+        fb.fill_rect(15, 124, 16, 1, RAREZAS[rareza][1] if rareza != "basica" else GRIS)
+        fb.text("%s x%d" % (nombre, n), 34, 113, NAVY if n else GRIS)
+        if n:
+            fb.text("O dar", 102, 113, VERDE)
+    elif tipo == "acc":
+        ident, nombre, necesita = COSMETICOS[dato]
+        if LOGROS.get("total", 0) < necesita:
+            fb.text(nombre, 16, 113, GRIS)
+            fb.text("%d Hecho!" % necesita, 72, 113, GRIS)
+        else:
+            fb.text(nombre[:9], 16, 113, NAVY)
+            puesto = ident in EST_W["puestos"]
+            fb.text("Puesto" if puesto else "O poner", 90, 113, VERDE if puesto else GRIS)
     else:
-        fb.text(nombre[:9], 16, 113, NAVY)
-        puesto = ident in EST_W["puestos"]
-        fb.text("Puesto" if puesto else "O poner", 90, 113, VERDE if puesto else GRIS)
+        fuego(16, 113)
+        fb.text("Racha?  O ver", 28, 113, NAVY)
     mostrar()
     return emo
+
+
+def pantalla_ayuda_racha():
+    """El aviso de cómo funciona la racha (y que el fin de semana no cuenta)."""
+    fb.fill(AZUL)
+    fb.fill_rect(0, 0, W, 13, NAVY)
+    fuego(3, 3)
+    fb.text("LA RACHA", 13, 3, BLANCO)
+    panel(3, 16, W - 6, H - 19)
+    lineas = (("Haz 1 pomodoro al", NAVY), ("dia (lunes a", NAVY), ("viernes).", NAVY),
+              ("Desde 2 dias, cada", NAVY), ("pomodoro te da una", NAVY), ("comida al azar.", NAVY),
+              ("Sab y dom NO", ROJO), ("cuentan ni rompen.", ROJO), ("Jugar: 25% energia", GRIS))
+    for k, (l, c) in enumerate(lineas):
+        fb.text(l, 7, 20 + k * 11, c)
+    mostrar()
+    EST_W["vio_racha"] = True
+    guardar_wonder()
+    esperar_soltar()
+    while True:
+        if "presion" in (b_o.leer(), b_izq.leer(), b_der.leer()):
+            break
+        tick()
+        time.sleep_ms(20)
+    esperar_soltar()
+
+
+def dar_comida(ident):
+    """Wonder se come una comida guardada. Devuelve el texto que dice Wonder."""
+    _, nombre, _, sube, _ = datos_comida(ident)
+    if EST_W["comida"].get(ident, 0) <= 0:
+        sonar("error")
+        return "No tienes|" + nombre
+    if EST_W.get("energia", 0) >= 100:
+        sonar("error")
+        return "Estoy lleno!"
+    EST_W["comida"][ident] -= 1
+    EST_W["energia"] = min(100, EST_W.get("energia", 0) + sube)
+    guardar_wonder()
+    sonar("comer")
+    return "Rico! +%d%%" % sube
 
 
 def pantalla_wonder():
     if EST_W["visita"] != hoy_str() and hora_ok():
         EST_W["visita"] = hoy_str()             # visitar a Wonder una vez al día lo alegra un poco
         guardar_wonder()
+    if not EST_W.get("vio_racha"):
+        pantalla_ayuda_racha()                  # la primera vez: cómo funciona la racha
+    items = items_wonder()
     sel = 0
-    animo, energia, _, venc = medidores()
+    for k, (tipo, dato) in enumerate(items):   # empieza en la primera comida que tengas
+        if tipo == "comida" and EST_W["comida"].get(dato, 0):
+            sel = k
+            break
+    animo, energia, venc = medidores()
     emo = emocion(animo, venc)
     texto = frase(emo, energia)
     dibujar_wonder(sel, texto)
@@ -1024,25 +1417,35 @@ def pantalla_wonder():
             return "menu"
         paso = -1 if e_izq == "presion" else 1 if e_der == "presion" else 0
         if paso:
-            sel = (sel + paso) % len(COSMETICOS)
+            sel = (sel + paso) % len(items)
             sonar("mover", paso, sel)
             dibujar_wonder(sel, texto)
         if e_o == "corto":
-            ident, nombre, necesita = COSMETICOS[sel]
-            if LOGROS.get("total", 0) < necesita:
-                sonar("error")
-                texto = "Necesitas|%d Hecho!" % necesita
-            elif not existe("acc_%s.spr" % ident):
-                sonar("error")
-                texto = "Pronto..."
-            elif ident in EST_W["puestos"]:
-                EST_W["puestos"].remove(ident)
-                sonar("volver")
+            tipo, dato = items[sel]
+            if tipo == "comida":
+                texto = dar_comida(dato)
+                if texto.startswith("Rico"):
+                    dibujar_wonder(sel, texto, comiendo=dato)
+                    time.sleep_ms(900)
+            elif tipo == "racha":
+                sonar("seleccionar")
+                pantalla_ayuda_racha()
             else:
-                EST_W["puestos"].append(ident)
-                sonar("guardar")
-                texto = "Me queda|bien?"
-            guardar_wonder()
+                ident, nombre, necesita = COSMETICOS[dato]
+                if LOGROS.get("total", 0) < necesita:
+                    sonar("error")
+                    texto = "Necesitas|%d Hecho!" % necesita
+                elif not existe("acc_%s.spr" % ident):
+                    sonar("error")
+                    texto = "Pronto..."
+                elif ident in EST_W["puestos"]:
+                    EST_W["puestos"].remove(ident)
+                    sonar("volver")
+                else:
+                    EST_W["puestos"].append(ident)
+                    sonar("guardar")
+                    texto = "Me queda|bien?"
+                guardar_wonder()
             dibujar_wonder(sel, texto)
         if tick():
             dibujar_wonder(sel, texto)
@@ -1130,9 +1533,22 @@ def cargar_menu():
             with open("fondo_menu.raw", "rb") as f:
                 f.readinto(fondo_menu)
         for app, _ in APPS:
+            if app == "juegos":
+                recargar_icono_juegos()
+                continue
             iconos[app] = cargar_spr("icono_%s.spr" % app)
             minis[app] = cargar_spr("icono_%s_mini.spr" % app)
             nombres[app] = cargar_spr("nombre_%s.spr" % app)
+
+
+def recargar_icono_juegos():
+    """El ícono y el nombre de "Juegos" en el menú son los del juego que te tocó."""
+    j = juego_actual()
+    iconos["juegos"] = minis["juegos"] = nombres["juegos"] = None
+    gc.collect()
+    iconos["juegos"] = cargar_spr("icono_juego_%s.spr" % j)
+    minis["juegos"] = cargar_spr("icono_juego_%s_mini.spr" % j)
+    nombres["juegos"] = cargar_spr("nombre_juego_%s.spr" % j)
 
 
 def dibujar_menu(i, dy=0):
@@ -1149,6 +1565,8 @@ def dibujar_menu(i, dy=0):
     if nombres[app]:
         pegar(nombres[app], BURBUJA_CENTRO[0], BURBUJA_CENTRO[1], transparente=False)
     else:
+        if app == "juegos":
+            texto = nombre_juego(juego_actual())
         fb.text(texto[:8], BURBUJA_CENTRO[0] - len(texto[:8]) * 4, BURBUJA_CENTRO[1] - 4, NAVY)
     mostrar()
 
@@ -1204,7 +1622,13 @@ def actualizar_calendario():
         time.sleep(2)
         return
     mensaje("Actualizando...", red.red_actual or "")
-    if sincronizar():
+    ok = sincronizar()
+    if not ok:
+        mensaje("Buscando el hub", "en esta red...")
+        if red.escanear_hub():                 # plan C: probar las direcciones de la red
+            ok = sincronizar()
+    T["sync_ok"] = ok
+    if ok:
         T["sync"] = time.ticks_ms()
         sonar("listo")
     else:
@@ -1450,7 +1874,12 @@ def pantalla_grabadora():
             time.sleep_ms(250)                       # que el sonido no quede en la grabación
             gc.collect()
             try:
-                g = grabadora.Grabacion()
+                try:
+                    g = grabadora.Grabacion()
+                except OSError:
+                    mensaje("Reintentando", "microSD...")
+                    grabadora.remontar()               # error 5: se reinicia la tarjeta y otra vez
+                    g = grabadora.Grabacion()
             except Exception as e:
                 import sys
                 sys.print_exception(e)
@@ -1478,6 +1907,11 @@ def pantalla_grabadora():
                 OCUPADO = False
                 gc.collect()
                 print("RAM libre tras grabar:", gc.mem_free())
+            if g.error:
+                sonar("error")
+                mensaje("microSD fallo", "Se guardo una parte")
+                time.sleep(2)
+                grabadora.remontar()
             sonar("guardar")
             mensaje("Guardado", nombre[6:22])
             time.sleep(1)
@@ -1544,7 +1978,7 @@ def _leer_cuerpo(texto):
 
 def _info():
     return json.dumps({"wonder": 2, "configurado": red.configurado(), "redes": red.nombres(),
-                       "bateria": BAT["pct"], "usb": BAT["usb"]})
+                       "bateria": BAT["pct"], "usb": BAT["usb"], "version": VERSION})
 
 
 def _atender(cl):
@@ -1664,6 +2098,50 @@ def pantalla_configurar():
 
 
 # ======================================================================
+#  JUEGOS y CONFIGURACIÓN (cada uno en su archivo: se cargan solo al abrirlos)
+# ======================================================================
+def pantalla_juegos():
+    gc.collect()
+    import juegos
+    try:
+        return juegos.pantalla()
+    finally:
+        del sys.modules["juegos"]               # libera la RAM del juego al salir
+        gc.collect()
+
+
+def pantalla_ajustes():
+    gc.collect()
+    import ajustes
+    try:
+        return ajustes.pantalla()
+    finally:
+        del sys.modules["ajustes"]
+        gc.collect()
+
+
+ARCH_AJUSTES = "ajustes.json"
+AJ = {"vol": {"notif": 100, "efectos": 100, "musica": 100}, "mudo": False}
+try:
+    with open(ARCH_AJUSTES) as _f:
+        _a = json.load(_f)
+    AJ["vol"].update(_a.get("vol", {}))
+    AJ["mudo"] = bool(_a.get("mudo", False))
+except (OSError, ValueError):
+    pass
+
+
+def guardar_ajustes():
+    try:
+        with open(ARCH_AJUSTES, "w") as f:
+            json.dump(AJ, f)
+    except OSError:
+        pass
+    if sonidos:
+        sonidos.ajustar(AJ["vol"], AJ["mudo"])
+
+
+# ======================================================================
 #  PROGRAMA
 # ======================================================================
 ESTADOS = {
@@ -1674,6 +2152,8 @@ ESTADOS = {
     "pomodoro": pantalla_pomodoro,
     "grabadora": pantalla_grabadora,
     "wonder": pantalla_wonder,
+    "juegos": pantalla_juegos,
+    "ajustes": pantalla_ajustes,
 }
 
 init_pantalla()
@@ -1681,8 +2161,10 @@ gc.collect()
 print("RAM libre:", gc.mem_free())
 leer_bateria()                      # antes de prender el WiFi
 if sonidos:
+    sonidos.ajustar(AJ["vol"], AJ["mudo"])
     sonidos.iniciar()
 sonar("encender")
+print("Wonder", VERSION, "| hora guardada:", RELOJ.get("mom"))
 cargar_menu()
 estado = "inicio" if red.cargar() else "configurar"
 while True:
@@ -1690,6 +2172,9 @@ while True:
     print("->", estado, "| RAM libre:", gc.mem_free())
     try:
         estado = ESTADOS[estado]()
+    except VolverInicio:            # se apagó con IZQ + DER: al prender, "Pulsa O"
+        OCUPADO = False
+        estado = "inicio"
     except Exception as e:          # que un error no deje el llavero colgado
         import sys
         sys.print_exception(e)

@@ -13,6 +13,11 @@ llavero/pomodoro.json
 llavero/wonder.raw
 llavero/wonder.ver
 llavero/wonder.tmp
+llavero/wonder_estado.json
+llavero/ajustes.json
+llavero/hora.json
+llavero/*.nuevo
+llavero/*.viejo
 
 # ===== Grabaciones de clases =====
 *.wav

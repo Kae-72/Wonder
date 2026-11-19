@@ -10,6 +10,14 @@ const dialogo = $("#dialogo");
 const EMOCIONES = [["base", "Normal"], ["feliz", "Feliz"], ["enojado", "Enojado"], ["preocupado", "Preocupado"]];
 const ACCESORIOS = [["gafas", "Gafas"], ["bufanda", "Bufanda"]];        // se dibujan bufanda -> gafas
 const ORDEN_CAPAS = ["bufanda", "gafas"];
+const BLOQUEADOS = [["nuevo1", 10], ["nuevo2", 25], ["nuevo3", 50]];   // accesorios que aún no existen
+// Comida que gana el llavero con la racha (igual que en llavero/main.py)
+const COMIDAS = [
+  ["mailo", "Mailo", "Básica", 20, 60],
+  ["arepa", "Arepa de maduro con boloñesa", "Rara", 27, 30],
+  ["changua", "Changua", "Nicho", 35, 10],
+];
+const JUEGOS = { br8kout: "Br8kout", flightrunner: "Flight Runner", piper: "Piper", sweetcopter: "Sw8 Copter" };
 const AP_NOMBRE = "Wonder-Setup", AP_CLAVE = "wonder1234";             // igual que en pico/main.py
 
 const S = {
@@ -158,19 +166,53 @@ function vistaInicio() {
   return `
     <section class="saludo">
       <div class="pila">
-        <h1>Hola</h1>
+        <h1>¡Hola! ¿Qué se dice?</h1>
         <p class="lema">“Wisdom begins in wonder.” — Sócrates</p>
       </div>
       <a href="#wonder" aria-label="Personalizar a Wonder">${capasWonder(e.wonder)}</a>
     </section>
     <section class="panel"><div class="panel__cabeza"><h2>Cuenta de Google</h2></div>${google}</section>
     <section class="panel"><div class="panel__cabeza"><h2>Llavero</h2>${estadoPico}</div>${llavero}</section>
+    ${vistaRacha(p)}
     ${vistaPomodoro(e.pomodoro)}
     ${vistaLogros(e.logros)}
     ${h.local && h.pin ? `<section class="panel">
       <div class="panel__cabeza"><h2>Abrir en el celular</h2></div>
       <p>Con el celular en el mismo WiFi, entra a <span class="dato">${esc(h.url)}</span> y escribe el PIN <span class="dato">${esc(h.pin)}</span>.</p>
     </section>` : ""}`;
+}
+
+// ---------- racha, energía y comida (lo cuenta el llavero) ----------
+function barraEnergia(e) {
+  const v = Math.max(0, Math.min(100, e ?? 0));
+  return `<div class="energia" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${v}" aria-label="Energía de Wonder">
+      <div class="energia__lleno ${v >= 25 ? "" : "energia__lleno--poca"}" style="width:${v}%"></div>
+      <div class="energia__marca" title="Para jugar hace falta 25 %"></div></div>`;
+}
+
+function tarjetasComida(c) {
+  return `<div class="comidas">${COMIDAS.map(([id, nombre, rareza, sube, prob]) => `
+      <div class="comida comida--${id}">
+        <img src="img/comida_${id}.png" alt="">
+        <span class="comida__rareza">${rareza}</span>
+        <b>${esc(nombre)}</b>
+        <span class="chico">+${sube}% energía · sale ${prob} de 100</span>
+        <span class="comida__n">× ${c ? (c[id] ?? 0) : "–"}</span>
+      </div>`).join("")}</div>`;
+}
+
+function vistaRacha(p) {
+  if (!p || p.visto_hace_seg == null) return "";
+  const r = p.racha ?? 0;
+  const juego = p.juego ? JUEGOS[p.juego] || p.juego : null;
+  return `<section class="panel">
+      <div class="panel__cabeza"><h2>Racha de estudio</h2>${pastilla(r >= 2 ? "pastilla--bien" : "", `🔥 ${r} ${r === 1 ? "día" : "días"}`)}</div>
+      <p>Cada día de semana con al menos un pomodoro terminado suma a la racha. Desde <b>2 días seguidos</b>, cada pomodoro le da a Wonder una comida al azar; tú decides cuándo dársela en el llavero (menú Wonder).</p>
+      <p class="nota nota--ojo"><b>Sábado y domingo no cuentan</b>: no suman a la racha y tampoco la rompen. Si un día de semana no estudias, la racha vuelve a cero y te toca otro juego.</p>
+      <div class="pila"><span class="chico">Energía de Wonder: <b>${esc(p.energia ?? 0)}%</b> (para jugar hace falta 25%; nunca baja sola)</span>${barraEnergia(p.energia)}</div>
+      ${tarjetasComida(p.comida)}
+      ${juego ? `<div class="fila"><img class="juego-mini" src="img/juego_${esc(p.juego)}.png" alt=""><span>Juego de ahora: <b>${esc(juego)}</b></span></div>` : ""}
+    </section>`;
 }
 
 function vistaLogros(l) {
@@ -180,7 +222,7 @@ function vistaLogros(l) {
   return `<section class="panel">
       <div class="panel__cabeza"><h2>¡Hecho!</h2>${pastilla(l.hoy ? "pastilla--bien" : "", `${l.hoy} hoy`)}</div>
       <p>En el llavero, entra a Calendario, elige una tarea o clase y pulsa <b>O</b> cuando la cumplas. Solo cuenta desde que empieza hasta 12 horas después de que termina, si estaba en el calendario desde antes, y máximo ${esc(l.max_por_dia)} al día.</p>
-      <div class="fila">${pastilla("pastilla--azul", `${l.total} en total`)}${pastilla("", `Racha: ${l.racha} ${l.racha === 1 ? "día" : "días"}`)}</div>
+      <div class="fila">${pastilla("pastilla--azul", `${l.total} en total`)}${pastilla("", `Días seguidos con ¡Hecho!: ${l.racha}`)}</div>
       ${lista ? `<ul class="pila chico">${lista}</ul>` : `<p class="chico suave">Aún no hay nada marcado.</p>`}
     </section>`;
 }
@@ -324,19 +366,35 @@ const RECORTE = {           // qué parte del PNG (lienzo 800) se ve en cada min
 function vistaWonder() {
   const w = S.wonder, guardado = S.estado.wonder;
   const igual = w.emocion === guardado.emocion && w.accesorios.slice().sort().join() === guardado.accesorios.slice().sort().join();
-  const p = S.estado.pico;
+  const p = S.estado.pico, total = S.estado.logros?.total ?? 0;
+  const emocion = (EMOCIONES.find(([id]) => id === w.emocion) || [, ""])[1];
   return `
     <h1>WONDER</h1>
-    <div class="escenario">${capasWonder(w)}</div>
+    <section class="wonder-hero">
+      <div class="escenario">${capasWonder(w)}<span class="escenario__etiqueta">${esc(emocion)}${w.accesorios.length ? " · " + w.accesorios.map((a) => esc((ACCESORIOS.find(([id]) => id === a) || [, a])[1])).join(" + ") : ""}</span></div>
+      <div class="wonder-hero__datos">
+        <div class="dato-grande"><span>🔥</span><b>${esc(p.racha ?? 0)}</b><small>días de racha</small></div>
+        <div class="pila"><small>Energía ${esc(p.energia ?? 0)}%</small>${barraEnergia(p.energia)}</div>
+        <div class="dato-grande"><span>✔</span><b>${esc(total)}</b><small>¡Hecho! en total</small></div>
+      </div>
+    </section>
     <section class="panel">
-      <h2>Emoción</h2>
+      <h2>¿Cómo se siente?</h2>
       <div class="opciones">${EMOCIONES.map(([id, nombre]) => `
         <button class="opcion" data-accion="emocion" data-id="${id}" aria-pressed="${w.emocion === id}">
           <span class="recorte"><img src="img/wonder_${id}.png" alt="" style="${RECORTE.cara}"></span>${nombre}</button>`).join("")}</div>
       <h2>Accesorios</h2>
       <div class="opciones">${ACCESORIOS.map(([id, nombre]) => `
         <button class="opcion" data-accion="accesorio" data-id="${id}" aria-pressed="${w.accesorios.includes(id)}">
-          <span class="recorte"><img src="img/wonder_${id}.png" alt="" style="${RECORTE[id]}"></span>${nombre}</button>`).join("")}</div>
+          <span class="recorte"><img src="img/wonder_${id}.png" alt="" style="${RECORTE[id]}"></span>${nombre}</button>`).join("")}
+        ${BLOQUEADOS.map(([id, n]) => `
+        <div class="opcion opcion--bloqueada" aria-disabled="true">
+          <span class="recorte recorte--candado" aria-hidden="true">${total >= n ? "?" : "🔒"}</span>???<small>${total >= n ? "¡Pronto!" : `${n} ¡Hecho!`}</small></div>`).join("")}</div>
+    </section>
+    <section class="panel">
+      <div class="panel__cabeza"><h2>Comida guardada</h2></div>
+      ${tarjetasComida(p.comida)}
+      <p class="chico suave">En el llavero: menú Wonder → elige la comida → <b>O</b> para dársela.</p>
     </section>
     <section class="panel">
       <div class="panel__cabeza"><h2>En el llavero</h2>
@@ -553,7 +611,8 @@ vista.addEventListener("change", async (ev) => {
 
 // ---------- refresco periódico ----------
 const firma = (e) => JSON.stringify([e.google.conectado, e.google.cuenta, e.pico.en_linea, e.pico.wonder_al_dia, e.pico.eventos,
-  e.pico.bateria, e.pico.usb, e.pico.red, e.pico.redes, e.pomodoro, e.logros?.total, e.wonder.version, e.ia]);
+  e.pico.bateria, e.pico.usb, e.pico.red, e.pico.redes, e.pomodoro, e.logros?.total, e.wonder.version, e.ia,
+  e.pico.racha, e.pico.energia, e.pico.comida, e.pico.juego]);
 
 async function refrescarEstado(forzarPintado = false) {
   let nuevo;

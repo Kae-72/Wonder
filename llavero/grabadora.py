@@ -22,6 +22,7 @@ FREC = 16000
 DESPLAZAMIENTO = 12        # ganancia del micrófono: 16 = sin ganancia, 12 = x16, 11 = x32
 MIC_CANAL = 0              # 0 = pin L/R del micrófono a GND (izquierdo), 1 = L/R a 3.3V (derecho)
 MAX_MINUTOS = 90
+VELOCIDAD_SD = 1_000_000   # lento pero seguro con cables largos o soldaduras justas (grabar necesita ~0,3 Mbit/s)
 CARPETA = "/sd/clases"
 DESCARTAR_MS = 300         # el micrófono hace "pop" al arrancar (y vacía lo viejo)
 
@@ -81,6 +82,18 @@ _mosfet = None
 ultimo_error = ""          # texto corto del último problema con la microSD (se muestra en pantalla)
 
 
+def remontar():
+    """Tras un error de la tarjeta (error 5): la suelta y la vuelve a montar desde cero."""
+    global _montada
+    try:
+        vfs.umount("/sd")
+    except Exception:
+        pass
+    _montada = False
+    time.sleep_ms(200)
+    return montar()
+
+
 def montar():
     """Prende y monta la microSD en /sd. Prueba el MOSFET en los dos sentidos."""
     global _montada, _mosfet, ultimo_error
@@ -93,7 +106,7 @@ def montar():
         time.sleep_ms(300)
         try:
             spi = SPI(1, baudrate=1_000_000, sck=Pin(SD_SCK), mosi=Pin(SD_MOSI), miso=Pin(SD_MISO))
-            tarjeta = sdcard.SDCard(spi, Pin(SD_CS, Pin.OUT), baudrate=10_000_000)
+            tarjeta = sdcard.SDCard(spi, Pin(SD_CS, Pin.OUT), baudrate=VELOCIDAD_SD)
             vfs.mount(vfs.VfsFat(tarjeta), "/sd")
         except Exception as e:
             ultimo = e
@@ -216,7 +229,12 @@ class Grabacion:
         self.n = n
         if n:
             self.nivel = convertir(self.crudo, self.pcm, n, DESPLAZAMIENTO, 2, MIC_CANAL)
-            self.f.write(memoryview(self.pcm)[:n * 2])
+            try:
+                self.f.write(memoryview(self.pcm)[:n * 2])
+            except OSError as e:                   # la tarjeta falló a mitad de la grabación
+                print("microSD falló grabando:", e)
+                self.error = e
+                return False                       # se termina y se guarda lo que alcanzó
             self.bytes += n * 2
         ahora = time.ticks_ms()
         if time.ticks_diff(ahora, self.t_flush) > 5000:     # cada 5 s: asegura lo grabado
@@ -224,9 +242,18 @@ class Grabacion:
             self.t_flush = ahora
         return self.segundos() < MAX_MINUTOS * 60
 
+    error = None
+
     def terminar(self):
-        self.f.seek(0)
-        self.f.write(_cabecera(self.bytes))
-        self.f.close()
+        try:
+            self.f.seek(0)
+            self.f.write(_cabecera(self.bytes))
+            self.f.close()
+        except OSError as e:
+            print("No se pudo cerrar bien (se repara al volver a montar):", e)
+            try:
+                self.f.close()
+            except OSError:
+                pass
         print("Grabado", self.nombre, self.segundos(), "s")
         return self.nombre

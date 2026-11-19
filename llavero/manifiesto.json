@@ -1,5 +1,5 @@
 {
-"version": "8.0",
+"version": "8.2",
 "archivos": [
 {
 "n": "acc_bufanda.spr",
@@ -258,28 +258,28 @@
 },
 {
 "n": "juegos.py",
-"t": 10305,
-"h": "75fe965c145b7f01abdee365619023141f94a039df21d82223d464321a2fdaf8"
+"t": 10401,
+"h": "4230e619a596e8bc529b3a1acad353244c37768ef37972663e20bc5b4e476f86"
 },
 {
 "n": "main.py",
-"t": 75233,
-"h": "51e6f94451502555bfbb5b284fac8bde294eb5e08baa6fde52b2b2e549a47129"
+"t": 78198,
+"h": "4569e83ecf101df2f117125a4349cc1c04f322403073447891092cedbc8b8c5e"
 },
 {
 "n": "nombre_ajustes.spr",
-"t": 1170,
-"h": "fb3138a11a763703c590f0f2ad8e995da27c81d3cc2fda2cfc63184d7f70c450"
+"t": 1324,
+"h": "bfc7460af40489e6f109e7662b1a6d1865ed3b9de79641c028e4306bc67989e0"
 },
 {
 "n": "nombre_calendario.spr",
-"t": 1264,
-"h": "1837b28ac0ae1c7320b42fc472c40ac4122eaed4c9857a5c7dbade15ab58bd7b"
+"t": 1284,
+"h": "addc2746a1638fe6b839f49af94c4371eb77fee3bfa287cc3d444cda36dc4fce"
 },
 {
 "n": "nombre_grabadora.spr",
-"t": 1244,
-"h": "850dacb8f6dca476425cf776412c4637e68d22f1bf4f94ab9beb5b3c10ba910f"
+"t": 1264,
+"h": "1e94d9420128008c942371d9a0a820c5514a8ddece949cd61a019bfe7c0ebaca"
 },
 {
 "n": "nombre_juego_br8kout.spr",
@@ -302,14 +302,19 @@
 "h": "5666d322b798418c7b22e89f28a5b0dd97d28a55f7834c27348f2a79ac382b52"
 },
 {
+"n": "nombre_juegos.spr",
+"t": 760,
+"h": "015eba547173607cfcb45839c74d9117fc577a981b271553dee724b6ef6ebbe7"
+},
+{
 "n": "nombre_pomodoro.spr",
-"t": 1184,
-"h": "35b6b6690214e3e89a5b9fd8ad3f458fbb5856da44258eabb5919af08771ca80"
+"t": 1204,
+"h": "06246c4b4e4210e5e3a4f125c8ae86e8b5491d7e712bcbf1f5ebae7757308e7b"
 },
 {
 "n": "nombre_wonder.spr",
-"t": 706,
-"h": "2b4ba4559089e77da418b77ebe5c00931d9b432051d81b787a295dd02b1fea23"
+"t": 904,
+"h": "6b8c73d1f1df76a93c70f37f9f0e9b87a171f1e9d1c738e92d3c5e852d3c5cfb"
 },
 {
 "n": "ota.py",
@@ -333,8 +338,8 @@
 },
 {
 "n": "sonidos.py",
-"t": 20665,
-"h": "605e10b7af98aa2729cc2770e1598f53dc0c8bd3e03b171f56384655e74bef26"
+"t": 21460,
+"h": "65fbfcff23817291049ddf8a3f9845caf8a411994d02fa928fc661bf9ac7103d"
 },
 {
 "n": "texto_inicio.spr",
@@ -344,7 +349,7 @@
 {
 "n": "version.txt",
 "t": 4,
-"h": "510fcef8619a24e3ce4d8838394e3c00a262aa18419e4e723bfccf0ce6debaf8"
+"h": "6b2f8967cfa688bcc0052d65fec13a20b25faba699f169b030941c87dcd0b725"
 },
 {
 "n": "wonder_base.spr",

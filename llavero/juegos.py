@@ -10,6 +10,7 @@
 #   - Tienes UN juego a la vez (el del menú). Cambia al azar cuando pierdes la racha.
 #   - Con la energía al 100 % puedes pagar 50 % para cambiarlo por otro.
 #
+# Se entra desde la pantalla de Wonder tocando O 3 veces rápido (está escondido del menú).
 # Botones en la pantalla del juego:  O = jugar,  IZQ / DER = ver los otros juegos,
 # mantener O = volver.  Dentro del juego: mantener IZQ + DER 1 segundo = salir.
 
@@ -110,7 +111,7 @@ def pantalla():
         if e_o == "largo":
             M.sonar("volver")
             M.esperar_soltar()
-            return "menu"
+            return "wonder"
         paso = -1 if e_izq == "presion" else 1 if e_der == "presion" else 0
         if paso:
             sel = (sel + paso) % len(ids)

@@ -19,6 +19,45 @@ con las claves del WiFi, `pines.json`, etc.) y las grabaciones `.wav`.
 
 ---
 
+## v8.2 — 19 de noviembre de 2026
+
+Subir al Pico: `main.py`, `sonidos.py`, `juegos.py`, `version.txt` y los nombres del menú
+`nombre_calendario.spr`, `nombre_pomodoro.spr`, `nombre_grabadora.spr`, `nombre_wonder.spr`,
+`nombre_ajustes.spr`, `nombre_juegos.spr`. (Incluye todo lo de la v8.1.)
+
+- **Botones arreglados**: antirrebote (un apretón ya no cuenta como dos) y una interrupción
+  anota cada toque aunque el llavero esté ocupado dibujando o conectándose (antes esos toques
+  se perdían). Los pines NO cambian (izq GP15, O GP14, der GP16).
+- **Ya no se queda silenciado**: la protección del parlante se disparaba por error y dejaba
+  todo muteado. Ahora solo corta un sonido que dure demasiado, y el siguiente suena normal.
+- **Barra de arriba sin cuadros azules**: batería, hora, WiFi, parlante y fueguito se
+  dibujan con un borde fino, sin tapar el fondo. En el Pomodoro ya no se repite la racha.
+- **Todos los nombres del menú con la letra bonita de Wonder** (Calendario, Pomodoro,
+  Grabadora, Wonder, Configurar).
+- **Juegos escondidos**: ya no salen en el menú. Se entra desde la pantalla de Wonder
+  tocando **O 3 veces rápido**; al salir vuelve a Wonder. Todo lo demás (CHIP-8, energía,
+  racha, cambio de juego) sigue igual. En Wonder, un toque de O espera ~0,35 s antes de
+  hacer su acción, para saber si vienen más toques.
+
+---
+
+## v8.1 — 18 de noviembre de 2026 (noche)
+
+Subir al Pico: `main.py`, `sonidos.py`, `nombre_wonder.spr`, `nombre_juegos.spr`, `version.txt`
+(o, si ya tienes la v8: Configurar → Actualizar, después del commit).
+
+- **Pitido de fondo**: ahora el audio se APAGA del todo cuando no suena nada (antes las
+  señales de audio seguían corriendo en silencio y el ruido se colaba al parlante).
+  El audio arranca solo cuando hay un sonido y se apaga ~0,3 s después.
+- El globo "Wonder" del menú vuelve a la letra de antes.
+- Fueguito de la racha sin cuadro azul de fondo (barra de arriba y Pomodoro), y en el menú
+  Wonder ya no dice "Racha" (solo el fuego y "?").
+- Juegos: si existe `icono_juegos.spr` (el logo de Paula), el menú usa ESE logo siempre,
+  sin importar qué juego te tocó. Se hace con `herramientas/preparar_v8.py` poniendo el PNG en
+  `herramientas/sprites_v8/icono_juegos.png`.
+
+---
+
 ## v8 — 18 de noviembre de 2026
 
 > **Ojo:** la v7.3 y la v7.4 nunca se subieron a GitHub. Esta versión las incluye (están más

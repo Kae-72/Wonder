@@ -180,14 +180,15 @@ def _amp_apagar():
 
 
 def _vigilar(_t):
-    global bloqueado, _amp
+    # Solo APAGA el amplificador (el sonido que se quedó pegado se corta). Ya NO deja el
+    # llavero silenciado: el siguiente sonido vuelve a funcionar normal. (En la v8 se
+    # disparaba por error cuando el Pico estaba ocupado y dejaba todo muteado.)
+    global _amp
     if not _amp:
         return
-    ahora = time.ticks_ms()
-    if time.ticks_diff(ahora, _t_cadena) > 900 or time.ticks_diff(ahora, _t_amp) > MAX_MS + 2000:
+    if time.ticks_diff(time.ticks_ms(), _t_amp) > MAX_MS + 2500:
         _sd.value(0)
         _amp = False
-        bloqueado = True
 
 
 _vigilante = None
@@ -222,20 +223,46 @@ def ajustar(vol=None, mudo=None):
 
 
 def revisar():
-    """Si la cadena de audio se cortó (más de 0,4 s sin pedir datos), la reengancha."""
-    if _audio is not None and not _detenido and time.ticks_diff(time.ticks_ms(), _t_cadena) > 400:
+    """Llamar seguido. Si la cadena de audio se cortó (más de 0,4 s sin pedir datos) la
+    reengancha. Si ya no suena nada, DETIENE el audio por completo (sin reloj de audio
+    no hay pitido de fondo): el próximo sonido lo vuelve a arrancar solo."""
+    if _audio is None or _detenido:
+        return
+    if not _ocupado and not _amp:
+        _cerrar_i2s()
+        return
+    if time.ticks_diff(time.ticks_ms(), _t_cadena) > 400:
         print("Sonido: cadena reenganchada")
         _alimentar(None)
 
 
-def iniciar():
-    global _audio, _sd, _detenido
-    _sd = Pin(PIN_SD, Pin.OUT, value=0)           # amplificador apagado hasta que suene algo
+def _abrir_i2s():
+    global _audio
     _audio = I2S(0, sck=Pin(PIN_BCLK), ws=Pin(PIN_LRC), sd=Pin(PIN_DIN), mode=I2S.TX,
                  bits=16, format=I2S.MONO, rate=FREC_MUESTREO, ibuf=3072)
     _audio.irq(_alimentar)                        # modo sin bloqueo
+    _alimentar(None)
+
+
+def _cerrar_i2s():
+    global _audio
+    a = _audio
+    _audio = None
+    if a is not None:
+        try:
+            a.deinit()
+        except Exception:
+            pass
+    # las patas del audio quedan quietas en 0 (nada de señal hacia el amplificador)
+    for n in (PIN_BCLK, PIN_LRC, PIN_DIN):
+        Pin(n, Pin.OUT, value=0)
+
+
+def iniciar():
+    global _sd, _detenido
+    _sd = Pin(PIN_SD, Pin.OUT, value=0)           # amplificador apagado hasta que suene algo
     _detenido = False
-    _alimentar(None)                              # arranca el flujo de silencio
+    _cerrar_i2s()                                 # el audio arranca solo cuando hay un sonido
     _poner_vigilante()
 
 
@@ -253,12 +280,7 @@ def apagar():
     _ocupado = False
     _buf = None
     _amp_apagar()
-    if _audio is not None:            # se suelta el I2S: así nada queda corriendo al dormir
-        try:
-            _audio.deinit()
-        except Exception:
-            pass
-        _audio = None
+    _cerrar_i2s()                     # se suelta el I2S: así nada queda corriendo al dormir
 
 
 def reanudar():
@@ -271,15 +293,16 @@ def tocar(notas, clave=None, cat="efectos"):
     """Toca una lista de notas. Interrumpe lo que esté sonando.
     cat = "notif", "efectos" o "musica" (cada uno con su volumen)."""
     global _buf, _pos, _ocupado
-    if _audio is None or not activo or bloqueado or VOL.get(cat, 100) <= 0:
+    if _detenido or not activo or bloqueado or VOL.get(cat, 100) <= 0:
         return
     _buf = None                      # mientras se prepara, el amplificador recibe silencio
     n = _render(notas, cat)
     _buf = memoryview(_BUF)[:n]
     _pos = 0
     _ocupado = True
+    if _audio is None:
+        _abrir_i2s()                 # el audio estaba detenido: se arranca para este sonido
     _amp_prender()
-    revisar()
 
 
 def sonando():

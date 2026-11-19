@@ -118,7 +118,11 @@ def main():
     icono_menu(ps.recortar_transparente(Image.open(ruta).convert("RGBA")), "icono_ajustes")
     ps.texto_spr("nombre_ajustes.spr", NOMBRE_AJUSTES, FUENTE, tam_para(NOMBRE_AJUSTES),
                  ps.COLOR_TEXTO, fondo=burbuja)
-    ps.texto_spr("nombre_wonder.spr", "Wonder", FUENTE, tam_para("Wonder"), ps.COLOR_TEXTO, fondo=burbuja)
+    # Logo fijo del menú Juegos (el de Paula). Si no está, el menú usa el logo del juego que te tocó.
+    ruta = os.path.join(ENTRADA, "icono_juegos.png")
+    if os.path.exists(ruta):
+        icono_menu(ps.recortar_transparente(Image.open(ruta).convert("RGBA")), "icono_juegos")
+    ps.texto_spr("nombre_juegos.spr", "Juegos", FUENTE, tam_para("Juegos"), ps.COLOR_TEXTO, fondo=burbuja)
     # 3) Juegos: el logo sale de la pantalla del propio juego
     for ident, (nombre, color, fondo, cuadro, caja) in JUEGOS.items():
         foto = foto_juego(ident, cuadro, color, fondo).crop(caja)

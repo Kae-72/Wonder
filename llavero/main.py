@@ -55,7 +55,9 @@ LARGO_MS = 700              # cuánto mantener O para "volver"
 POMODORO = {"estudio": 25, "descanso": 5, "sesiones": 4}   # la app puede cambiarlo
 
 APPS = [("calendario", "Calendario"), ("pomodoro", "Pomodoro"), ("grabadora", "Grabadora"),
-        ("wonder", "Wonder"), ("juegos", "Juegos"), ("ajustes", "Configuracion")]
+        ("wonder", "Wonder"), ("ajustes", "Configuracion")]
+# "Juegos" está escondido: en la pantalla de Wonder, tocar O 3 veces rápido.
+TOQUES_MS = 350             # tiempo máximo entre toques para contar como "seguidos"
 GUARDAR_HORA_MIN = 30       # cada cuánto se guarda la hora (por si el Pico se reinicia)
 NTP_CADA_H = 6              # cada cuánto se corrige la hora con internet (si no hay hub)
 BURBUJA_CENTRO = (39, 17)
@@ -244,31 +246,72 @@ print("Pines:", PINES)
 ACT = {"t": time.ticks_ms()}     # última vez que se tocó un botón
 
 
+REBOTE_MS = 50              # un botón "rebota" unos milisegundos al apretarlo y soltarlo
+
+
 class Boton:
+    """Un botón con antirrebote. Una interrupción anota CADA apretón aunque el programa
+    esté ocupado (antes, un toque rápido mientras se dibujaba la pantalla se perdía, y
+    el rebote del botón contaba como dos toques)."""
+
     def __init__(self, n):
         self.p = Pin(n, Pin.IN, Pin.PULL_UP)
-        self.antes = 1
+        self.abajo = False          # hay un apretón en curso
+        self.pend = False           # la interrupción vio un apretón nuevo
+        self.t_irq = 0
         self.t0 = 0
+        self.t_bajo = 0             # última vez que se vio apretado
+        self.t_soltar = 0
         self.largo_hecho = False
+        try:
+            self.p.irq(self._irq, Pin.IRQ_FALLING)
+        except Exception:
+            pass
+
+    def _irq(self, _p):
+        ahora = time.ticks_ms()
+        if self.abajo or time.ticks_diff(ahora, self.t_soltar) < REBOTE_MS:
+            return                  # rebote del mismo apretón
+        if time.ticks_diff(ahora, self.t_irq) < REBOTE_MS:
+            return
+        self.t_irq = ahora
+        self.pend = True
+
+    def limpiar(self):
+        self.abajo = False
+        self.pend = False
+        self.t_soltar = time.ticks_ms()
 
     def leer(self):
         """None, 'presion' (al bajar), 'corto' (al soltar rápido) o 'largo' (mantenido)."""
         v = self.p.value()
         ahora = time.ticks_ms()
-        ev = None
-        if v == 0 and self.antes == 1:
-            self.t0 = ahora
-            self.largo_hecho = False
-            ev = "presion"
-        elif v == 0 and not self.largo_hecho and time.ticks_diff(ahora, self.t0) >= LARGO_MS:
-            self.largo_hecho = True
-            ev = "largo"
-        elif v == 1 and self.antes == 0 and not self.largo_hecho and time.ticks_diff(ahora, self.t0) > 30:
-            ev = "corto"
-        self.antes = v
-        if ev:
-            ACT["t"] = ahora
-        return ev
+        if v == 0:
+            self.t_bajo = ahora
+        if not self.abajo:
+            if self.pend or (v == 0 and time.ticks_diff(ahora, self.t_soltar) > REBOTE_MS):
+                self.pend = False
+                self.abajo = True
+                self.largo_hecho = False
+                self.t0 = self.t_irq if time.ticks_diff(ahora, self.t_irq) < 400 else ahora
+                self.t_bajo = ahora if v == 0 else self.t0
+                ACT["t"] = ahora
+                return "presion"
+            return None
+        self.pend = False           # rebotes durante el mismo apretón
+        if v == 0:
+            if not self.largo_hecho and time.ticks_diff(ahora, self.t0) >= LARGO_MS:
+                self.largo_hecho = True
+                ACT["t"] = ahora
+                return "largo"
+            return None
+        if time.ticks_diff(ahora, self.t_bajo) >= REBOTE_MS:   # suelto de verdad (no rebote)
+            self.abajo = False
+            self.t_soltar = ahora
+            if not self.largo_hecho:
+                ACT["t"] = ahora
+                return "corto"
+        return None
 
 
 b_izq = Boton(PINES["izq"])
@@ -279,8 +322,9 @@ b_der = Boton(PINES["der"])
 def esperar_soltar():
     while b_o.p.value() == 0 or b_izq.p.value() == 0 or b_der.p.value() == 0:
         time.sleep_ms(10)
+    time.sleep_ms(REBOTE_MS)
     for b in (b_izq, b_o, b_der):
-        b.antes = 1
+        b.limpiar()
 
 
 def sonar(nombre, *args):
@@ -365,73 +409,79 @@ FUEGO_DENTRO = ((3, 4), (3, 5))
 
 
 def fuego(x, y):
-    """Fueguito de la racha (7x7)."""
+    """Fueguito de la racha (7x7), con borde fino y sin cuadro de fondo."""
+    for px, py in FUEGO:
+        for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+            fb.pixel(x + px + dx, y + py + dy, NAVY)
     for px, py in FUEGO:
         fb.pixel(x + px, y + py, ROJO)
     for px, py in FUEGO_DENTRO:
         fb.pixel(x + px, y + py, AMARILLO)
 
 
+PARLANTE = ((0, 2), (0, 3), (0, 4), (1, 2), (1, 3), (1, 4), (2, 1), (2, 2), (2, 3), (2, 4), (2, 5),
+            (3, 0), (3, 1), (3, 2), (3, 3), (3, 4), (3, 5), (3, 6))
+ONDAS = ((5, 2), (5, 3), (5, 4), (6, 1), (6, 5))
+
+
 def parlante(x, y, mudo):
-    """Parlante de 7x7: con ondas si suena, con una X roja si está silenciado."""
-    for px, py in ((0, 2), (0, 3), (0, 4), (1, 2), (1, 3), (1, 4), (2, 1), (2, 2), (2, 3), (2, 4), (2, 5),
-                   (3, 0), (3, 1), (3, 2), (3, 3), (3, 4), (3, 5), (3, 6)):
+    """Parlante de 7x7 (sin cuadro de fondo, con un borde fino para verse sobre cualquier
+    fondo): con ondas si suena, con una X roja si está silenciado."""
+    puntos = PARLANTE if mudo else PARLANTE + ONDAS
+    for px, py in puntos:                        # borde fino
+        for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+            fb.pixel(x + px + dx, y + py + dy, NAVY)
+    for px, py in puntos:
         fb.pixel(x + px, y + py, BLANCO)
     if mudo:
         for k in range(3):
             fb.pixel(x + 4 + k, y + 2 + k, ROJO)
             fb.pixel(x + 6 - k, y + 2 + k, ROJO)
-    else:
-        for px, py in ((5, 2), (5, 3), (5, 4), (6, 1), (6, 5)):
-            fb.pixel(x + px, y + py, BLANCO)
+
+
+def _contorno(puntos, x, y, c):
+    """Dibuja puntos con un borde fino oscuro (se lee sobre cualquier fondo, sin cuadros)."""
+    for px, py in puntos:
+        for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+            fb.pixel(x + px + dx, y + py + dy, NAVY)
+    for px, py in puntos:
+        fb.pixel(x + px, y + py, c)
+
+
+BATERIA = tuple([(k, 0) for k in range(12)] + [(k, 6) for k in range(12)] + [(0, k) for k in range(1, 6)]
+                + [(11, k) for k in range(1, 6)] + [(12, 2), (12, 3), (12, 4), (13, 2), (13, 3), (13, 4)])
+WIFI = ((0, 5), (0, 6), (2, 3), (2, 4), (2, 5), (2, 6), (4, 1), (4, 2), (4, 3), (4, 4), (4, 5), (4, 6))
 
 
 def dibujar_barra():
+    """Barra de arriba SIN cuadros de fondo: cada cosa con un borde fino."""
     global _barra_dibujada
     _barra_dibujada = firma_barra()
     x = W - 16
-    # batería: cuerpo 12x7 + punta
-    fb.fill_rect(x - 1, 1, 16, 9, NAVY)
-    fb.rect(x, 2, 12, 7, BLANCO)
-    fb.fill_rect(x + 12, 4, 2, 3, BLANCO)
+    _contorno(BATERIA, x, 2, BLANCO)
     if BAT["usb"]:
-        for px, py in ((6, 3), (5, 4), (4, 5), (5, 5), (6, 5), (7, 5), (6, 6), (5, 7)):
-            fb.pixel(x + px, py, AMARILLO)                 # rayito = cargando / USB
+        _contorno(((6, 1), (5, 2), (4, 3), (5, 3), (6, 3), (7, 3), (6, 4), (5, 5)), x, 2, AMARILLO)
     elif BAT["pct"] is not None:
         p = BAT["pct"]
         c = VERDE if p > 50 else AMARILLO if p > 20 else ROJO
         fb.fill_rect(x + 2, 4, max(1, 8 * p // 100), 3, c)
-    else:
-        fb.pixel(x + 5, 4, BLANCO); fb.pixel(x + 6, 6, BLANCO)
-    # hora
     h = texto_hora()
-    x -= ancho_chico(h) + 5
-    fb.fill_rect(x - 1, 2, ancho_chico(h) + 2, 7, NAVY)
+    x -= ancho_chico(h) + 4
     chico(h, x, 3)
-    # WiFi: tres rayitas
     if red.conectado():
         x -= 8
-        fb.fill_rect(x - 1, 2, 7, 8, NAVY)
-        fb.fill_rect(x, 7, 1, 2, BLANCO)
-        fb.fill_rect(x + 2, 5, 1, 4, BLANCO)
-        fb.fill_rect(x + 4, 3, 1, 6, BLANCO)
-    # parlante (con X si está silenciado)
+        _contorno(WIFI, x, 2, BLANCO)
     x -= 9
-    fb.fill_rect(x - 1, 1, 9, 9, NAVY)
     parlante(x, 2, silenciado())
-    # racha de estudio: fueguito + días
     racha = EST_W.get("racha", 0)
     if racha:
         n = "%d" % racha
         x -= ancho_chico(n) + 11
-        fb.fill_rect(x - 1, 1, ancho_chico(n) + 11, 9, NAVY)
         fuego(x, 2)
         chico(n, x + 9, 3, AMARILLO)
-    # pomodoro corriendo: punto rojo + minutos
     if pomo_estado() != "parado":
         m = "%d" % (pomo_resta_s() // 60)
         x -= ancho_chico(m) + 8
-        fb.fill_rect(x - 1, 2, 5, 7, NAVY)
         fb.fill_rect(x, 4, 3, 3, ROJO if POMO["fase"] == "estudio" else VERDE)
         chico(m, x + 5, 3)
 
@@ -922,10 +972,7 @@ def dibujar_pomodoro():
     else:
         texto_borde("O seguir", 3, 3)
         texto_borde("IZQ terminar", 3, 14)
-    racha = EST_W.get("racha", 0)                      # la racha, también aquí
-    fb.fill_rect(2, 25, 11, 9, NAVY)
-    fuego(4, 26)
-    texto_borde(("%d dia" if racha == 1 else "%d dias") % racha, 15, 26, AMARILLO)
+
     # panel con el tiempo
     x, y, w, h = 3, 78, 74, 46
     panel(x, y, w, h)
@@ -1345,7 +1392,8 @@ def dibujar_wonder(sel, texto, comiendo=None):
             fb.text("Puesto" if puesto else "O poner", 90, 113, VERDE if puesto else GRIS)
     else:
         fuego(16, 113)
-        fb.text("Racha?  O ver", 28, 113, NAVY)
+        fb.text("?", 26, 113, NAVY)
+        fb.text("O ver", 102, 113, VERDE)
     mostrar()
     return emo
 
@@ -1407,6 +1455,8 @@ def pantalla_wonder():
     texto = frase(emo, energia)
     dibujar_wonder(sel, texto)
     sonar({"feliz": "hecho", "triste": "volver", "enojado": "error"}.get(emo, "seleccionar"))
+    toques = 0                  # toques de O seguidos (3 = juegos escondidos)
+    t_toque = 0
     while True:
         e_izq, e_der, e_o = b_izq.leer(), b_der.leer(), b_o.leer()
         if e_o == "largo":
@@ -1417,10 +1467,23 @@ def pantalla_wonder():
             return "menu"
         paso = -1 if e_izq == "presion" else 1 if e_der == "presion" else 0
         if paso:
+            toques = 0
             sel = (sel + paso) % len(items)
             sonar("mover", paso, sel)
             dibujar_wonder(sel, texto)
         if e_o == "corto":
+            toques += 1
+            t_toque = time.ticks_ms()
+            if toques >= 3:
+                sonar("especial")
+                _spr_cache.clear()
+                gc.collect()
+                return "juegos"
+        orden = None
+        if toques and time.ticks_diff(time.ticks_ms(), t_toque) > TOQUES_MS and b_o.p.value() == 1:
+            orden = "corto"     # 1 o 2 toques: cuenta como un toque normal
+            toques = 0
+        if orden == "corto":
             tipo, dato = items[sel]
             if tipo == "comida":
                 texto = dar_comida(dato)
@@ -1546,6 +1609,11 @@ def recargar_icono_juegos():
     j = juego_actual()
     iconos["juegos"] = minis["juegos"] = nombres["juegos"] = None
     gc.collect()
+    if existe("icono_juegos.spr"):              # logo fijo de Juegos (el de Paula)
+        iconos["juegos"] = cargar_spr("icono_juegos.spr")
+        minis["juegos"] = cargar_spr("icono_juegos_mini.spr")
+        nombres["juegos"] = cargar_spr("nombre_juegos.spr")
+        return
     iconos["juegos"] = cargar_spr("icono_juego_%s.spr" % j)
     minis["juegos"] = cargar_spr("icono_juego_%s_mini.spr" % j)
     nombres["juegos"] = cargar_spr("nombre_juego_%s.spr" % j)
@@ -1565,7 +1633,7 @@ def dibujar_menu(i, dy=0):
     if nombres[app]:
         pegar(nombres[app], BURBUJA_CENTRO[0], BURBUJA_CENTRO[1], transparente=False)
     else:
-        if app == "juegos":
+        if app == "juegos" and not existe("icono_juegos.spr"):
             texto = nombre_juego(juego_actual())
         fb.text(texto[:8], BURBUJA_CENTRO[0] - len(texto[:8]) * 4, BURBUJA_CENTRO[1] - 4, NAVY)
     mostrar()
